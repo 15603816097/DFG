@@ -1,3 +1,5 @@
+import os
+
 import torch
 import yaml
 
@@ -21,9 +23,53 @@ def load_config(path):
         "r"
     ) as f:
 
-        config=yaml.safe_load(f)
+        return yaml.safe_load(f)
 
-    return config
+
+
+
+def plot_loss(history):
+
+    import matplotlib.pyplot as plt
+
+
+    os.makedirs(
+        "results",
+        exist_ok=True
+    )
+
+
+    plt.figure()
+
+
+    plt.plot(
+        history
+    )
+
+
+    plt.xlabel(
+        "Epoch"
+    )
+
+
+    plt.ylabel(
+        "Loss"
+    )
+
+
+    plt.title(
+        "Training Loss"
+    )
+
+
+    plt.savefig(
+
+        "results/loss_curve.png"
+
+    )
+
+
+    plt.close()
 
 
 
@@ -31,21 +77,26 @@ def load_config(path):
 def main():
 
 
-    ####################################
-    # config
-    ####################################
-
     config=load_config(
+
         "configs/train.yaml"
+
     )
+
 
 
     device=torch.device(
+
         "cuda"
+
         if torch.cuda.is_available()
+
         else
+
         "cpu"
+
     )
+
 
 
     print(
@@ -55,59 +106,51 @@ def main():
 
 
 
-    ####################################
-    # Dataset
-    ####################################
-
-
     dataset=KITTIRawDataset(
+
         config["dataset"]["root"]
+
     )
+
 
 
     print(
+
         "Dataset length:",
+
         len(dataset)
+
     )
 
 
-
-    ####################################
-    # Model
-    ####################################
 
 
     model=ModelPipeline(
+
         input_dim=51,
+
         state_dim=6
+
     )
 
 
-
-    ####################################
-    # Loss
-    ####################################
 
 
     criterion=StateLoss()
 
 
 
-    ####################################
-    # Optimizer
-    ####################################
-
 
     optimizer=Adam(
+
         model.parameters(),
+
         lr=config["train"]["lr"]
+
     )
 
 
 
-    ####################################
-    # Trainer
-    ####################################
 
 
     trainer=Trainer(
@@ -122,56 +165,45 @@ def main():
 
         device=device,
 
-        batch_size=config["train"]["batch_size"]
+        batch_size=config["train"]["batch_size"],
+
+        save_dir=config["checkpoint"]["save_dir"]
 
     )
 
 
 
-    ####################################
-    # Train
-    ####################################
 
 
-    epochs=config["train"]["epochs"]
+    history=trainer.fit(
 
-
-    for epoch in range(
-        epochs
-    ):
-
-
-        loss=trainer.train_epoch()
-
-
-        print(
-            f"Epoch {epoch+1}/{epochs}, Loss={loss:.6f}"
-        )
-
-
-
-    ####################################
-    # Save
-    ####################################
-
-
-    torch.save(
-
-        model.state_dict(),
-
-        "checkpoints/model.pth"
+        config["train"]["epochs"]
 
     )
+
+
+
+    plot_loss(
+
+        history
+
+    )
+
+
+
+    trainer.test()
+
 
 
     print(
+
         "Training finished"
+
     )
 
 
 
 
 if __name__=="__main__":
-
 
     main()
