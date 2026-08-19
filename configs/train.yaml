@@ -1,0 +1,32 @@
+seed: 42
+
+
+dataset:
+
+  root: dataset/kitti/2011_10_03/2011_10_03_drive_0027_sync
+
+  window_size: 20
+
+
+
+train:
+
+  batch_size: 16
+
+  epochs: 1
+
+  lr: 0.001
+
+
+
+model:
+
+  input_dim: 51
+
+  state_dim: 6
+
+
+
+checkpoint:
+
+  save_dir: checkpoints
