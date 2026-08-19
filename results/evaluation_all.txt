@@ -1,33 +1,70 @@
-Trajectory Evaluation Results
-======================================================================
 
+------------------------------------------------------------
 IMU Dead Reckoning
-----------------------------------------
-ATE_3D_RMSE(m): 11942.334190
-ATE_2D_RMSE(m): 11936.884259
-Mean_3D_Error(m): 9172.584401
-Max_3D_Error(m): 25880.009626
-Mean_2D_Error(m): 9157.058095
-Max_2D_Error(m): 25879.820235
-Z_RMSE(m): 360.749349
+ATE_3D_RMSE: 11942.331988
+ATE_2D_RMSE: 11936.882505
+Mean_3D_Error: 9172.581064
+Max_3D_Error: 25880.007263
+Mean_2D_Error: 9157.056970
+Max_2D_Error: 25879.817933
+Z_RMSE: 360.734501
 
+------------------------------------------------------------
 ESKF
-----------------------------------------
-ATE_3D_RMSE(m): 21.756836
-ATE_2D_RMSE(m): 3.717895
-Mean_3D_Error(m): 21.708069
-Max_3D_Error(m): 24.512026
-Mean_2D_Error(m): 2.833317
-Max_2D_Error(m): 11.589371
-Z_RMSE(m): 21.436818
+ATE_3D_RMSE: 21.703628
+ATE_2D_RMSE: 3.717596
+Mean_3D_Error: 21.654783
+Max_3D_Error: 24.464796
+Mean_2D_Error: 2.832942
+Max_2D_Error: 11.590216
+Z_RMSE: 21.382865
 
+------------------------------------------------------------
 Factor Graph
-----------------------------------------
-ATE_3D_RMSE(m): 1.136785
-ATE_2D_RMSE(m): 1.111198
-Mean_3D_Error(m): 0.793661
-Max_3D_Error(m): 5.801039
-Mean_2D_Error(m): 0.742317
-Max_2D_Error(m): 5.781590
-Z_RMSE(m): 0.239834
+ATE_3D_RMSE: 1.137175
+ATE_2D_RMSE: 1.111577
+Mean_3D_Error: 0.793706
+Max_3D_Error: 5.809440
+Mean_2D_Error: 0.742284
+Max_2D_Error: 5.789889
+Z_RMSE: 0.239925
 
+------------------------------------------------------------
+FG GPS Noise 5m
+ATE_3D_RMSE: 1.137175
+ATE_2D_RMSE: 1.111577
+Mean_3D_Error: 0.793706
+Max_3D_Error: 5.809440
+Mean_2D_Error: 0.742284
+Max_2D_Error: 5.789889
+Z_RMSE: 0.239925
+
+------------------------------------------------------------
+FG GPS Noise 10m
+ATE_3D_RMSE: 2.111549
+ATE_2D_RMSE: 2.058578
+Mean_3D_Error: 1.545145
+Max_3D_Error: 8.560526
+Mean_2D_Error: 1.459782
+Max_2D_Error: 8.472425
+Z_RMSE: 0.469991
+
+------------------------------------------------------------
+FG GPS Noise 20m
+ATE_3D_RMSE: 3.820733
+ATE_2D_RMSE: 3.702634
+Mean_3D_Error: 2.783536
+Max_3D_Error: 13.017342
+Mean_2D_Error: 2.622894
+Max_2D_Error: 12.769304
+Z_RMSE: 0.942602
+
+------------------------------------------------------------
+FG GPS Noise 50m
+ATE_3D_RMSE: 5.486344
+ATE_2D_RMSE: 5.249634
+Mean_3D_Error: 3.604137
+Max_3D_Error: 21.834476
+Mean_2D_Error: 3.317601
+Max_2D_Error: 21.182382
+Z_RMSE: 1.594151
