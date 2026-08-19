@@ -1,0 +1,33 @@
+Trajectory Evaluation Results
+======================================================================
+
+IMU Dead Reckoning
+----------------------------------------
+ATE_3D_RMSE(m): 11942.334190
+ATE_2D_RMSE(m): 11936.884259
+Mean_3D_Error(m): 9172.584401
+Max_3D_Error(m): 25880.009626
+Mean_2D_Error(m): 9157.058095
+Max_2D_Error(m): 25879.820235
+Z_RMSE(m): 360.749349
+
+ESKF
+----------------------------------------
+ATE_3D_RMSE(m): 21.756836
+ATE_2D_RMSE(m): 3.717895
+Mean_3D_Error(m): 21.708069
+Max_3D_Error(m): 24.512026
+Mean_2D_Error(m): 2.833317
+Max_2D_Error(m): 11.589371
+Z_RMSE(m): 21.436818
+
+Factor Graph
+----------------------------------------
+ATE_3D_RMSE(m): 1.136785
+ATE_2D_RMSE(m): 1.111198
+Mean_3D_Error(m): 0.793661
+Max_3D_Error(m): 5.801039
+Mean_2D_Error(m): 0.742317
+Max_2D_Error(m): 5.781590
+Z_RMSE(m): 0.239834
+

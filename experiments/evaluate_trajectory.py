@@ -1,17 +1,24 @@
 """
 Trajectory Evaluation
 
+Compare:
+
+1. IMU Dead Reckoning
+2. ESKF
+3. Factor Graph
+
+
 Metrics:
 
-1. ATE RMSE 3D
-2. ATE RMSE 2D (XY)
-3. Mean Error
-4. Maximum Error
-5. Z Error
+- ATE 3D RMSE
+- ATE 2D RMSE
+- Mean Error
+- Maximum Error
+- Z RMSE
 
 
-Reference:
-Ground Truth trajectory
+Coordinate:
+ENU
 """
 
 
@@ -22,9 +29,9 @@ import numpy as np
 
 
 
-# ==================================================
-# Path
-# ==================================================
+# =====================================================
+# Project Path
+# =====================================================
 
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(
@@ -34,31 +41,53 @@ PROJECT_ROOT = os.path.dirname(
 
 
 
-GT_FILE = os.path.join(
+RESULT_DIR = os.path.join(
     PROJECT_ROOT,
-    "results",
+    "results"
+)
+
+
+
+# Ground Truth
+
+GT_FILE = os.path.join(
+    RESULT_DIR,
     "ground_truth",
     "trajectory.txt"
 )
 
 
 
+# Methods
+
 METHODS = {
 
-    "IMU":
+
+    "IMU Dead Reckoning":
+
     os.path.join(
-        PROJECT_ROOT,
-        "results",
+        RESULT_DIR,
         "imu_baseline",
         "trajectory.txt"
     ),
 
 
+
     "ESKF":
+
     os.path.join(
-        PROJECT_ROOT,
-        "results",
+        RESULT_DIR,
         "eskf",
+        "trajectory.txt"
+    ),
+
+
+
+    "Factor Graph":
+
+    os.path.join(
+        RESULT_DIR,
+        "factor_graph",
         "trajectory.txt"
     )
 
@@ -66,21 +95,24 @@ METHODS = {
 
 
 
+
+
 OUTPUT_FILE = os.path.join(
-    PROJECT_ROOT,
-    "results",
-    "evaluation.txt"
+    RESULT_DIR,
+    "evaluation_all.txt"
 )
 
 
 
 
 
-# ==================================================
-# Load
-# ==================================================
+
+# =====================================================
+# Load trajectory
+# =====================================================
 
 def load_trajectory(path):
+
 
     if not os.path.exists(path):
 
@@ -89,34 +121,65 @@ def load_trajectory(path):
         )
 
 
-    return np.loadtxt(
+    trajectory = np.loadtxt(
         path
     )
 
 
+    if trajectory.ndim != 2:
+
+        raise RuntimeError(
+            "Trajectory format error"
+        )
+
+
+    if trajectory.shape[1] != 3:
+
+        raise RuntimeError(
+            "Trajectory must be Nx3"
+        )
+
+
+    return trajectory
 
 
 
-# ==================================================
+
+
+
+
+# =====================================================
 # Metrics
-# ==================================================
+# =====================================================
 
-def evaluate(
+def compute_metrics(
     estimate,
-    gt
+    ground_truth
 ):
 
+
+    if estimate.shape != ground_truth.shape:
+
+        raise RuntimeError(
+            f"Shape mismatch: "
+            f"{estimate.shape} vs {ground_truth.shape}"
+        )
+
+
+
+    # position error
 
     error = (
         estimate
         -
-        gt
+        ground_truth
     )
 
 
-    # ------------------
+
+    # -----------------------------
     # 3D error
-    # ------------------
+    # -----------------------------
 
     error_3d = np.linalg.norm(
         error,
@@ -124,18 +187,16 @@ def evaluate(
     )
 
 
-    ate_3d = np.sqrt(
+    ate_3d_rmse = np.sqrt(
         np.mean(
-            error_3d**2
+            error_3d ** 2
         )
     )
-
 
 
     mean_3d = np.mean(
         error_3d
     )
-
 
 
     max_3d = np.max(
@@ -144,38 +205,39 @@ def evaluate(
 
 
 
-    # ------------------
-    # 2D XY error
-    # ------------------
 
-    error_xy = np.linalg.norm(
-        error[:,:2],
+    # -----------------------------
+    # 2D XY error
+    # -----------------------------
+
+    error_2d = np.linalg.norm(
+        error[:, :2],
         axis=1
     )
 
 
-    ate_2d = np.sqrt(
+    ate_2d_rmse = np.sqrt(
         np.mean(
-            error_xy**2
+            error_2d ** 2
         )
     )
 
 
-
     mean_2d = np.mean(
-        error_xy
+        error_2d
     )
 
 
     max_2d = np.max(
-        error_xy
+        error_2d
     )
 
 
 
-    # ------------------
+
+    # -----------------------------
     # Z error
-    # ------------------
+    # -----------------------------
 
     z_error = np.abs(
         error[:,2]
@@ -184,26 +246,40 @@ def evaluate(
 
     z_rmse = np.sqrt(
         np.mean(
-            z_error**2
+            z_error ** 2
         )
     )
 
 
     return {
 
-        "ATE_3D_RMSE": ate_3d,
 
-        "ATE_2D_RMSE": ate_2d,
+        "ATE_3D_RMSE(m)":
+        ate_3d_rmse,
 
-        "Mean_3D": mean_3d,
 
-        "Max_3D": max_3d,
+        "ATE_2D_RMSE(m)":
+        ate_2d_rmse,
 
-        "Mean_2D": mean_2d,
 
-        "Max_2D": max_2d,
+        "Mean_3D_Error(m)":
+        mean_3d,
 
-        "Z_RMSE": z_rmse
+
+        "Max_3D_Error(m)":
+        max_3d,
+
+
+        "Mean_2D_Error(m)":
+        mean_2d,
+
+
+        "Max_2D_Error(m)":
+        max_2d,
+
+
+        "Z_RMSE(m)":
+        z_rmse
 
     }
 
@@ -211,9 +287,11 @@ def evaluate(
 
 
 
-# ==================================================
+
+
+# =====================================================
 # Main
-# ==================================================
+# =====================================================
 
 def main():
 
@@ -234,11 +312,28 @@ def main():
 
 
 
-    results={}
+    print(
+        "Ground Truth:",
+        gt.shape
+    )
+
+
+
+    all_results = {}
 
 
 
     for name,path in METHODS.items():
+
+
+        print()
+        print(
+            "-"*60
+        )
+
+        print(
+            name
+        )
 
 
         trajectory = load_trajectory(
@@ -246,40 +341,38 @@ def main():
         )
 
 
-        if trajectory.shape != gt.shape:
-
-            raise RuntimeError(
-                f"{name} trajectory mismatch"
-            )
-
+        print(
+            "Trajectory:",
+            trajectory.shape
+        )
 
 
-        metrics = evaluate(
+
+        metrics = compute_metrics(
             trajectory,
             gt
         )
 
 
-        results[name]=metrics
+        all_results[name]=metrics
 
 
 
-        print()
-        print(
-            name
-        )
-
-        for k,v in metrics.items():
+        for key,value in metrics.items():
 
             print(
-                f"{k}: {v:.4f} m"
+                f"{key:<25}: {value:.6f}"
             )
 
 
 
 
 
-    # save
+
+    # =================================================
+    # Save
+    # =================================================
+
 
     with open(
         OUTPUT_FILE,
@@ -288,29 +381,34 @@ def main():
 
 
         f.write(
-            "Trajectory Evaluation\n"
+            "Trajectory Evaluation Results\n"
         )
+
 
         f.write(
-            "="*60+"\n\n"
+            "="*70+"\n\n"
         )
 
 
-        for name,metrics in results.items():
+
+        for name,metrics in all_results.items():
+
 
             f.write(
                 name+"\n"
             )
 
+
             f.write(
-                "-"*30+"\n"
+                "-"*40+"\n"
             )
 
 
-            for k,v in metrics.items():
+            for key,value in metrics.items():
+
 
                 f.write(
-                    f"{k}: {v:.6f} m\n"
+                    f"{key}: {value:.6f}\n"
                 )
 
 
@@ -321,19 +419,27 @@ def main():
 
 
     print()
+    print(
+        "="*60
+    )
 
     print(
         "Saved:"
     )
 
+
     print(
         OUTPUT_FILE
+    )
+
+    print(
+        "="*60
     )
 
 
 
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
 
     main()
