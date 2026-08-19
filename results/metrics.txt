@@ -1,0 +1,12 @@
+Trajectory Evaluation
+==================================================
+IMU
+ATE RMSE: 11942.334190 m
+Mean Error: 9172.584401 m
+Max Error: 25880.009626 m
+
+ESKF
+ATE RMSE: 21.756836 m
+Mean Error: 21.708069 m
+Max Error: 24.512026 m
+
