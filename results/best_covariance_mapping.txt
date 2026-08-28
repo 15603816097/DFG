@@ -1,0 +1,8 @@
+horizon=3
+prediction_weight=1.0
+feedback_weight=0.0
+sigma_min=3.0
+sigma_max=30.00000000
+gamma=3.00000000
+ATE3D=3.45216296
+ImprovementVsFixed=7.5587%

@@ -1,0 +1,10 @@
+prediction_horizon: 5
+best_epoch: 4
+MAE: 0.32939372
+RMSE: 0.46975045
+Correlation: 0.67448871
+BinaryAccuracy@0.5: 0.60904255
+BadRecall@0.5: 1.00000000
+FalseReliableRate@0.8: 0.00000000
+HighPrecision@0.8: 0.00000000
+Loss: 0.26644357

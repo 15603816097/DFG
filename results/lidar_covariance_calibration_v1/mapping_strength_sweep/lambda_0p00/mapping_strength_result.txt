@@ -1,0 +1,14 @@
+lambda: 0.0
+sigma_t_min: 0.15
+sigma_t_max: 0.15
+sigma_t_mean: 0.15
+sigma_r_min: 0.012857142857142857
+sigma_r_max: 0.012857142857142857
+sigma_r_mean: 0.012857142857142857
+ATE3D: 1.977234659710874
+ATE2D: 1.826405397951531
+Mean3D: 1.3780539976895085
+Max3D: 9.342078238849153
+ZRMSE: 0.7574300112191793
+improvement_vs_best_fixed_percent: 1.7210353144087123e-05
+gap_vs_gt_oracle_percent: 4.602362966316645

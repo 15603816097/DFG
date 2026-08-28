@@ -10,20 +10,27 @@ Max Error
 Z RMSE
 
 
-Compare:
+Methods:
 
-IMU
-ESKF
-Factor Graph
-Factor Graph under GPS degradation
+1. IMU Dead Reckoning
+2. ESKF
+3. Factor Graph
+4. Dynamic Covariance FG
+5. FG GPS Noise
+6. FG GPS Degradation
 
 """
+
 
 
 import os
 import numpy as np
 
 
+
+# =====================================================
+# Path
+# =====================================================
 
 
 PROJECT_ROOT = os.path.dirname(
@@ -50,76 +57,91 @@ GT_PATH = os.path.join(
 
 
 
+# =====================================================
+# Trajectory files
+# =====================================================
+
+
 METHODS = {
 
 
     "IMU Dead Reckoning":
 
-        os.path.join(
-            RESULT_ROOT,
-            "imu_baseline",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "imu_baseline",
+        "trajectory.txt"
+    ),
 
 
 
     "ESKF":
 
-        os.path.join(
-            RESULT_ROOT,
-            "eskf",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "eskf",
+        "trajectory.txt"
+    ),
 
 
 
     "Factor Graph":
 
-        os.path.join(
-            RESULT_ROOT,
-            "factor_graph",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "factor_graph",
+        "trajectory.txt"
+    ),
 
 
 
-    "FG GPS Noise 5m":
+    "Dynamic Covariance FG":
 
-        os.path.join(
-            RESULT_ROOT,
-            "factor_graph_noise_5",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "dynamic_covariance_fg",
+        "trajectory.txt"
+    ),
 
 
 
     "FG GPS Noise 10m":
 
-        os.path.join(
-            RESULT_ROOT,
-            "factor_graph_noise_10",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "factor_graph_noise_10",
+        "trajectory.txt"
+    ),
 
 
 
     "FG GPS Noise 20m":
 
-        os.path.join(
-            RESULT_ROOT,
-            "factor_graph_noise_20",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "factor_graph_noise_20",
+        "trajectory.txt"
+    ),
 
 
 
     "FG GPS Noise 50m":
 
-        os.path.join(
-            RESULT_ROOT,
-            "factor_graph_noise_50",
-            "trajectory.txt"
-        ),
+    os.path.join(
+        RESULT_ROOT,
+        "factor_graph_noise_50",
+        "trajectory.txt"
+    ),
+
+
+
+    "FG GPS Degradation":
+
+    os.path.join(
+        RESULT_ROOT,
+        "factor_graph_degradation",
+        "trajectory.txt"
+    )
 
 }
 
@@ -127,8 +149,13 @@ METHODS = {
 
 
 
+# =====================================================
+# Load
+# =====================================================
+
 
 def load_trajectory(path):
+
 
     if not os.path.exists(path):
 
@@ -137,9 +164,11 @@ def load_trajectory(path):
         )
 
 
+
     traj=np.loadtxt(
         path
     )
+
 
 
     if traj.ndim==1:
@@ -149,21 +178,21 @@ def load_trajectory(path):
         )
 
 
-    return traj[:,0:3]
+    return traj[:,:3]
 
 
 
 
 
 
+
+# =====================================================
+# Align origin
+# =====================================================
 
 
 def align_origin(traj):
 
-    """
-    Remove initial position offset
-
-    """
 
     return traj-traj[0]
 
@@ -174,14 +203,16 @@ def align_origin(traj):
 
 
 
+# =====================================================
+# Metrics
+# =====================================================
 
-def compute_metrics(
+
+def evaluate(
     pred,
     gt
 ):
 
-
-    # same length
 
     N=min(
         len(pred),
@@ -189,13 +220,12 @@ def compute_metrics(
     )
 
 
+
     pred=pred[:N]
 
     gt=gt[:N]
 
 
-
-    # origin alignment
 
     pred=align_origin(
         pred
@@ -212,67 +242,72 @@ def compute_metrics(
 
 
 
+
     # =========================
-    # 3D error
+    # 3D
     # =========================
 
-    error_3d=np.linalg.norm(
+
+    error3d=np.linalg.norm(
         error,
         axis=1
     )
 
 
-    ate_3d_rmse=np.sqrt(
+
+    ate3d=np.sqrt(
         np.mean(
-            error_3d**2
+            error3d**2
         )
     )
 
 
-
-    mean_3d=np.mean(
-        error_3d
+    mean3d=np.mean(
+        error3d
     )
 
 
-    max_3d=np.max(
-        error_3d
+    max3d=np.max(
+        error3d
     )
+
+
 
 
 
     # =========================
-    # 2D xy error
+    # 2D
     # =========================
 
 
-    error_2d=np.linalg.norm(
+    error2d=np.linalg.norm(
         error[:,:2],
         axis=1
     )
 
 
-    ate_2d_rmse=np.sqrt(
+    ate2d=np.sqrt(
         np.mean(
-            error_2d**2
+            error2d**2
         )
     )
 
 
-
-    mean_2d=np.mean(
-        error_2d
+    mean2d=np.mean(
+        error2d
     )
 
 
-    max_2d=np.max(
-        error_2d
+    max2d=np.max(
+        error2d
     )
+
+
 
 
 
     # =========================
-    # height
+    # Z
     # =========================
 
 
@@ -284,48 +319,29 @@ def compute_metrics(
 
 
 
+
     return {
 
 
-        "ATE_3D_RMSE":
-
-            ate_3d_rmse,
+        "ATE_3D_RMSE(m)": ate3d,
 
 
-
-        "ATE_2D_RMSE":
-
-            ate_2d_rmse,
+        "ATE_2D_RMSE(m)": ate2d,
 
 
-
-        "Mean_3D_Error":
-
-            mean_3d,
+        "Mean_3D_Error(m)": mean3d,
 
 
-
-        "Max_3D_Error":
-
-            max_3d,
+        "Max_3D_Error(m)": max3d,
 
 
-
-        "Mean_2D_Error":
-
-            mean_2d,
+        "Mean_2D_Error(m)": mean2d,
 
 
-
-        "Max_2D_Error":
-
-            max_2d,
+        "Max_2D_Error(m)": max2d,
 
 
-
-        "Z_RMSE":
-
-            z_rmse
+        "Z_RMSE(m)": z_rmse
 
     }
 
@@ -334,6 +350,11 @@ def compute_metrics(
 
 
 
+
+
+# =====================================================
+# Main
+# =====================================================
 
 
 def main():
@@ -382,16 +403,18 @@ def main():
 
 
 
+
         traj=load_trajectory(
             path
         )
 
 
 
-        metrics=compute_metrics(
+        metrics=evaluate(
             traj,
             gt
         )
+
 
 
         all_results[name]=metrics
@@ -406,10 +429,12 @@ def main():
             name
         )
 
+
         print(
             "Trajectory:",
             traj.shape
         )
+
 
 
         for k,v in metrics.items():
@@ -422,29 +447,37 @@ def main():
 
 
 
-    # ===============================
-    # save
-    # ===============================
+    # =================================================
+    # Save
+    # =================================================
 
 
-    output=os.path.join(
+    save_path=os.path.join(
         RESULT_ROOT,
         "evaluation_all.txt"
     )
 
 
+
     with open(
-        output,
+        save_path,
         "w"
     ) as f:
 
 
-        for name,metrics in all_results.items():
+        f.write(
+            "Trajectory Evaluation\n"
+        )
+
+
+
+        for name,result in all_results.items():
 
 
             f.write(
                 "\n"
             )
+
 
             f.write(
                 "-"*60+"\n"
@@ -456,11 +489,14 @@ def main():
             )
 
 
-            for k,v in metrics.items():
+
+            for k,v in result.items():
 
                 f.write(
                     f"{k}: {v:.6f}\n"
                 )
+
+
 
 
 
@@ -473,7 +509,7 @@ def main():
     )
 
     print(
-        output
+        save_path
     )
 
     print("="*60)

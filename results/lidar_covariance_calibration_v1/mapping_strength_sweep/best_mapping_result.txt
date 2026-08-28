@@ -1,0 +1,16 @@
+BEST LIDAR MAPPING STRENGTH
+================================================================================
+lambda: 1.0
+sigma_t_min: 0.15
+sigma_t_max: 0.3
+sigma_t_mean: 0.20103154645261526
+sigma_r_min: 0.012857142857142857
+sigma_r_max: 0.025714285714285714
+sigma_r_mean: 0.017231275410224168
+ATE3D: 1.728808805175804
+ATE2D: 1.6170050831906175
+Mean3D: 1.2501453894443857
+Max3D: 8.412837094556224
+ZRMSE: 0.6116162569692658
+improvement_vs_best_fixed_percent: 12.564323149458517
+gap_vs_gt_oracle_percent: -8.54020019818637

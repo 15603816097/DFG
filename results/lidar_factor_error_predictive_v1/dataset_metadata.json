@@ -1,0 +1,36 @@
+{
+  "pairs": 4543,
+  "feature_dim": 26,
+  "feature_names": [
+    "fitness",
+    "rmse",
+    "corr_norm",
+    "quality",
+    "translation_norm",
+    "rotation_norm_deg",
+    "d_fitness",
+    "d_rmse",
+    "d_corr_norm",
+    "d_quality",
+    "d_translation",
+    "d_rotation",
+    "dd_translation",
+    "dd_rotation",
+    "fitness_mean_5",
+    "fitness_std_5",
+    "rmse_mean_5",
+    "rmse_std_5",
+    "translation_mean_5",
+    "translation_std_5",
+    "rotation_mean_5",
+    "rotation_std_5",
+    "fitness_mean_20",
+    "rmse_mean_20",
+    "translation_mean_20",
+    "rotation_mean_20"
+  ],
+  "target": [
+    "future_translation_factor_error_m",
+    "future_rotation_factor_error_deg"
+  ]
+}

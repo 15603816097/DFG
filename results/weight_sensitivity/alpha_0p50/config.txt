@@ -1,0 +1,7 @@
+horizon=3
+alpha=0.50000000
+feedback_weight=0.50000000
+sigma_min=3.0
+sigma_max=20.0
+gamma=3.0
+feedback_scale=8.0

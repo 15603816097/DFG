@@ -1,0 +1,11 @@
+Horizon Sensitivity Summary
+======================================================================
+H= 1 Lead=0.10s ATE3D=3.662367 Rcorr=0.750045 vsFixed=1.93%
+H= 3 Lead=0.30s ATE3D=3.539503 Rcorr=0.767413 vsFixed=5.22%
+H= 5 Lead=0.50s ATE3D=3.627695 Rcorr=0.757121 vsFixed=2.86%
+H=10 Lead=1.00s ATE3D=3.678393 Rcorr=0.750454 vsFixed=1.50%
+H=20 Lead=2.00s ATE3D=3.735089 Rcorr=0.740524 vsFixed=-0.02%
+
+Best horizon: 3
+Best lead time: 0.30s
+Best ATE3D: 3.53950289

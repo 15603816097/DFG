@@ -1,0 +1,89 @@
+FINAL FOUR-SENSOR PREDICTIVE RELIABILITY DYNAMIC FACTOR GRAPH
+====================================================================================================
+
+Frames: 4544
+LiDAR pairs: 4543
+LiDAR lambda: 1.000000
+LiDAR sigma_t min/max/mean: 0.1500000000 / 0.3000000000 / 0.2010315465
+LiDAR sigma_r min/max/mean: 0.0128571429 / 0.0257142857 / 0.0172312754
+
+EXPERIMENTS
+----------------------------------------------------------------------------------------------------
+E0_all_fixed
+  GPS fixed + IMU fixed + LiDAR fixed + Camera fixed
+  ATE3D=2.4563402210
+  ATE2D=2.3745760355
+  Mean3D=1.8237870394
+  Max3D=7.0998375704
+  ZRMSE=0.6284870188
+
+E1_gps_predictive
+  GPS predictive only; IMU/LiDAR/Camera fixed
+  ATE3D=2.3914327935
+  ATE2D=2.1059809590
+  Mean3D=1.6292433570
+  Max3D=10.4581490525
+  ZRMSE=1.1330467803
+
+E2_imu_predictive
+  IMU predictive only; GPS/LiDAR/Camera fixed
+  ATE3D=2.7932018458
+  ATE2D=2.4965073381
+  Mean3D=2.1250932483
+  Max3D=8.5313624236
+  ZRMSE=1.2527680002
+
+E3_camera_predictive
+  Camera predictive only; GPS/IMU/LiDAR fixed
+  ATE3D=2.7284764983
+  ATE2D=2.4564429296
+  Mean3D=2.0856893690
+  Max3D=8.8792282328
+  ZRMSE=1.1876329969
+
+E4_gps_imu_predictive
+  GPS+IMU predictive; LiDAR+Camera fixed
+  ATE3D=2.5325808523
+  ATE2D=2.0899794420
+  Mean3D=1.6265887717
+  Max3D=12.9469488660
+  ZRMSE=1.4303676818
+
+E5_gps_camera_predictive
+  GPS+Camera predictive; IMU+LiDAR fixed
+  ATE3D=2.4214566273
+  ATE2D=2.0946730153
+  Mean3D=1.5402463033
+  Max3D=12.5423486635
+  ZRMSE=1.2148239201
+
+E6_imu_camera_predictive
+  IMU+Camera predictive; GPS+LiDAR fixed
+  ATE3D=2.8364412511
+  ATE2D=2.5132770677
+  Mean3D=2.1601264928
+  Max3D=7.9355208069
+  ZRMSE=1.3148525971
+
+E7_gps_imu_camera_predictive_lidar_fixed
+  GPS+IMU+Camera predictive; LiDAR fixed
+  ATE3D=1.9772346597
+  ATE2D=1.8264053980
+  Mean3D=1.3780539977
+  Max3D=9.3420782394
+  ZRMSE=0.7574300111
+
+E8_final_full_predictive_dynamic
+  GPS+IMU+Camera predictive + LiDAR predictive dynamic covariance
+  ATE3D=1.7288088052
+  ATE2D=1.6170050832
+  Mean3D=1.2501453894
+  Max3D=8.4128370930
+  ZRMSE=0.6116162570
+
+FINAL METHOD
+----------------------------------------------------------------------------------------------------
+Best experiment: E8_final_full_predictive_dynamic
+Final ATE3D: 1.7288088052
+Improvement vs all-fixed: 29.618512%
+Improvement vs E7 (G+I+C predictive, LiDAR fixed): 12.564308%

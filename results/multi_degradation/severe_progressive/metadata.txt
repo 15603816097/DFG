@@ -1,0 +1,6 @@
+name=severe_progressive
+description=Gradual severe noise/bias degradation
+frames=4544
+error_mean=4.31259115
+error_rmse=6.06048169
+error_max=25.31590457

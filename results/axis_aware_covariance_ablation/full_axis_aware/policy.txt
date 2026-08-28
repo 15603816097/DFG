@@ -1,0 +1,1 @@
+AxisAwarePolicy(name='full_axis_aware', gps_xy_dynamic=True, gps_z_dynamic=False, imu_roll_dynamic=False, imu_pitch_dynamic=False, imu_yaw_dynamic=True, lidar_dynamic=False, camera_roll_dynamic=False, camera_pitch_dynamic=False, camera_yaw_dynamic=True, camera_xy_dynamic=True, camera_z_dynamic=False)

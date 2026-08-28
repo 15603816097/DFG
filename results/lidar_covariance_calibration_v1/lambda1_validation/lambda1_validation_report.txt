@@ -1,0 +1,44 @@
+LIDAR LAMBDA=1 VALIDATION REPORT
+====================================================================================================
+
+Frames: 4544
+LiDAR pairs: 4543
+
+PREDICTION RISK VS REALIZED GT FACTOR ERROR
+Pearson risk-vs-translation: 0.1914277564
+Spearman risk-vs-translation: 0.1489360171
+Pearson risk-vs-rotation: 0.1527626495
+Spearman risk-vs-rotation: 0.1888625061
+
+LAMBDA=1 FORCED REPEATS
+repeat_1_ATE3D: 1.7288088052
+repeat_2_ATE3D: 1.7288088052
+repeat_3_ATE3D: 1.7288088052
+ATE_mean: 1.7288088052
+ATE_std: 0.0000000000
+ATE_range: 0.0000000000
+cached_reference_difference: 0.0000001948
+
+LAMBDA=0.5 FORCED CHECK
+ATE3D: 2.6137783050
+reference_difference: 0.0000003050
+
+MATCHED GT ORACLE
+translation_p50: 0.0381711017
+translation_p90: 0.1066475470
+rotation_p50: 0.1330796802
+rotation_p90: 0.2487789286
+matched_oracle_ATE3D: 1.8865466857
+
+FINAL COMPARISON
+fixed_ATE3D: 1.9772350000
+predictive_lambda1_ATE3D: 1.7288088052
+matched_gt_oracle_ATE3D: 1.8865466857
+improvement_vs_fixed_percent: 12.564323
+gap_vs_matched_oracle_percent: -8.361197
+
+CHECKS
+cached_reproduced: True
+deterministic: True
+lambda05_reproduced: True
+dynamic_beats_fixed: True

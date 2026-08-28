@@ -1,0 +1,8 @@
+Multi-Degradation Robustness Summary
+==========================================================================================
+mild_progressive         Fixed=1.857874 Robust=1.853946 Proposed=1.827090 Oracle=1.641334 vsFixed=1.66% vsRobust=1.45% Rcorr=0.6022
+medium_progressive       Fixed=2.792421 Robust=2.790864 Proposed=2.783634 Oracle=2.105075 vsFixed=0.31% vsRobust=0.26% Rcorr=0.6841
+severe_progressive       Fixed=3.750890 Robust=3.718907 Proposed=3.816393 Oracle=2.460266 vsFixed=-1.75% vsRobust=-2.62% Rcorr=0.7124
+sudden                   Fixed=7.117766 Robust=7.101444 Proposed=7.079121 Oracle=6.234789 vsFixed=0.54% vsRobust=0.31% Rcorr=0.7275
+bias_drift               Fixed=8.579939 Robust=8.579939 Proposed=8.575577 Oracle=8.598740 vsFixed=0.05% vsRobust=0.05% Rcorr=0.2239
+intermittent_outlier     Fixed=0.697210 Robust=0.543739 Proposed=0.424451 Oracle=0.269133 vsFixed=39.12% vsRobust=21.94% Rcorr=0.5614

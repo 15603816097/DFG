@@ -1,0 +1,6 @@
+name=intermittent_outlier
+description=Short intermittent large GPS outlier bursts
+frames=4544
+error_mean=1.02224195
+error_rmse=3.16983940
+error_max=26.65317875

@@ -1,0 +1,20 @@
+{
+  "version": "balanced_v2",
+  "seed": 20260826,
+  "n_frames": 4544,
+  "split_bounds": {
+    "train": [
+      0,
+      3180
+    ],
+    "val": [
+      3180,
+      3862
+    ],
+    "test": [
+      3862,
+      4544
+    ]
+  },
+  "design": "Each chronological split contains normal + mild + medium + severe + burst degradation for every sensor."
+}

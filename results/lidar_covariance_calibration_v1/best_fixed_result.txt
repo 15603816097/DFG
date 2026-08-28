@@ -1,0 +1,13 @@
+BEST FIXED LIDAR COVARIANCE
+================================================================================
+sigma_translation: 0.15
+sigma_rotation: 0.012857142857142857
+ATE3D: 1.9772346597002994
+ATE2D: 1.8264053979716284
+Mean3D: 1.3780539977258237
+Max3D: 9.34207823941534
+ZRMSE: 0.7574300111431136
+gps_factors: 4544
+imu_factors: 4543
+lidar_factors: 4543
+camera_factors: 4461

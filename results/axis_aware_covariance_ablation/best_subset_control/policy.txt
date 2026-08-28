@@ -1,0 +1,1 @@
+AxisAwarePolicy(name='best_subset_control', gps_xy_dynamic=True, gps_z_dynamic=True, imu_roll_dynamic=True, imu_pitch_dynamic=True, imu_yaw_dynamic=True, lidar_dynamic=False, camera_roll_dynamic=True, camera_pitch_dynamic=True, camera_yaw_dynamic=True, camera_xy_dynamic=True, camera_z_dynamic=True)

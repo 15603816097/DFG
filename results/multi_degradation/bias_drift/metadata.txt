@@ -1,0 +1,6 @@
+name=bias_drift
+description=Slowly growing and recovering GPS bias drift
+frames=4544
+error_mean=4.95500985
+error_rmse=8.58904980
+error_max=24.79026391

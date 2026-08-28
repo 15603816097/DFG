@@ -1,0 +1,13 @@
+Prediction / Feedback Weight Sensitivity
+======================================================================
+alpha=0.50 feedback=0.50 ATE3D=3.595677 SigmaMean=5.646439 vsFixed=3.72%
+alpha=0.60 feedback=0.40 ATE3D=3.568038 SigmaMean=5.438781 vsFixed=4.46%
+alpha=0.70 feedback=0.30 ATE3D=3.543795 SigmaMean=5.259470 vsFixed=5.10%
+alpha=0.80 feedback=0.20 ATE3D=3.526818 SigmaMean=5.107340 vsFixed=5.56%
+alpha=0.90 feedback=0.10 ATE3D=3.513551 SigmaMean=4.981222 vsFixed=5.91%
+alpha=1.00 feedback=0.00 ATE3D=3.504099 SigmaMean=4.879949 vsFixed=6.17%
+
+Best alpha: 1.00
+Best feedback weight: 0.00
+Best ATE3D: 3.50409893
+Improvement vs Fixed: 6.1680%

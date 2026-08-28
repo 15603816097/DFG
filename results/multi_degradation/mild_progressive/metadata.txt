@@ -1,0 +1,6 @@
+name=mild_progressive
+description=Gradual low-intensity noise/bias degradation
+frames=4544
+error_mean=2.32989525
+error_rmse=3.16687672
+error_max=12.98188011

@@ -1,0 +1,6 @@
+name=sudden
+description=Abrupt GPS position jumps with short persistent faults
+frames=4544
+error_mean=3.24472087
+error_rmse=7.35873849
+error_max=26.65207848

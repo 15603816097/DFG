@@ -1,0 +1,10 @@
+{
+  "seed": 20260826,
+  "n_frames": 4544,
+  "sensors": [
+    "gps",
+    "imu",
+    "lidar",
+    "camera"
+  ]
+}

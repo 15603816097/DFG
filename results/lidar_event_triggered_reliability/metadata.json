@@ -1,0 +1,23 @@
+{
+  "config": {
+    "predictive_bad_threshold": 0.35,
+    "predictive_severe_threshold": 0.18,
+    "quality_bad_threshold": 0.78,
+    "quality_severe_threshold": 0.68,
+    "translation_disagreement_bad": 0.18,
+    "translation_disagreement_severe": 0.3,
+    "rotation_disagreement_bad_deg": 0.35,
+    "rotation_disagreement_severe_deg": 0.6,
+    "temporal_translation_z": 2.8,
+    "temporal_rotation_z": 2.8,
+    "trigger_score_bad": 2.0,
+    "trigger_score_severe": 3.5,
+    "event_reliability_bad": 0.35,
+    "event_reliability_severe": 0.15,
+    "temporal_window": 25,
+    "eps": 1e-08
+  },
+  "frames": 4544,
+  "triggered_frames": 1168,
+  "severe_frames": 422
+}

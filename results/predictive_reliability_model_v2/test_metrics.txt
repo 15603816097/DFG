@@ -1,0 +1,18 @@
+best_epoch: 1
+prediction_horizon: 5
+MAE: 0.40377657
+RMSE: 0.42685797
+Correlation: 0.60846478
+StateAccuracy: 0.59009309
+BadRecall: 1.00000000
+FalseReliableRate: 0.00000000
+ReliablePrecision: 1.00000000
+ReliableRecall: 0.16403569
+ConfusionMatrix:
+[[1536    0    0]
+ [  15    0    0]
+ [1218    0  239]]
+Loss: 1.03911549
+ClassificationLoss: 0.77664384
+RegressionLoss: 0.34994680
+SafetyLoss: 0.00004622

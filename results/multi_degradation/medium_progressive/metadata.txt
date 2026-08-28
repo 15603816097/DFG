@@ -1,0 +1,6 @@
+name=medium_progressive
+description=Gradual medium-intensity noise/bias degradation
+frames=4544
+error_mean=3.31499404
+error_rmse=4.62903693
+error_max=17.91404185

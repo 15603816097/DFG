@@ -1,0 +1,6 @@
+horizon=3
+prediction_weight=1.0
+feedback_weight=0.0
+sigma_min=3.0
+sigma_max=30.0
+gamma=3.0

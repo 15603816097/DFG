@@ -1,0 +1,4 @@
+gps=fixed
+imu=oracle
+lidar=fixed
+camera=fixed

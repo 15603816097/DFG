@@ -1,0 +1,8 @@
+horizon=10
+best_epoch=13
+current_mae=0.10127333
+current_rmse=0.16305251
+current_corr=0.72669638
+future_mae=0.07924553
+future_rmse=0.13015523
+future_corr=0.92738334

@@ -1,0 +1,70 @@
+{
+  "frames": 4544,
+  "source_dir": "/home/chenkeming/DFG/results/predictive_factor_reliability_v1",
+  "source_files": {
+    "gps": "/home/chenkeming/DFG/results/predictive_factor_reliability_v1/gps_predictive_prior_target_aligned.txt",
+    "imu": "/home/chenkeming/DFG/results/predictive_factor_reliability_v1/imu_predictive_prior_target_aligned.txt",
+    "lidar": "/home/chenkeming/DFG/results/predictive_factor_reliability_v1/lidar_predictive_prior_target_aligned.txt",
+    "camera": "/home/chenkeming/DFG/results/predictive_factor_reliability_v1/camera_predictive_prior_target_aligned.txt"
+  },
+  "config": {
+    "consensus_gain_gps": 0.18,
+    "consensus_gain_imu": 0.22,
+    "consensus_gain_lidar": 0.08,
+    "consensus_gain_camera": 0.18,
+    "floor_gps": 0.05,
+    "floor_imu": 0.25,
+    "floor_lidar": 0.72,
+    "floor_camera": 0.08,
+    "max_delta_gps": 0.12,
+    "max_delta_imu": 0.1,
+    "max_delta_lidar": 0.08,
+    "max_delta_camera": 0.12,
+    "lidar_disagreement_threshold": 0.2,
+    "lidar_recovery_gain": 0.65,
+    "camera_gps_imu_gain": 0.12,
+    "ema_beta": 0.82
+  },
+  "diagnostics": {
+    "gps": {
+      "original_min": 0.00342547,
+      "original_max": 1.0,
+      "original_mean": 0.7186355764084508,
+      "coordinated_min": 0.0716665158990632,
+      "coordinated_max": 1.0,
+      "coordinated_mean": 0.7278372209246567,
+      "mean_abs_change": 0.02944260750497784,
+      "max_abs_change": 0.12000000000000001
+    },
+    "imu": {
+      "original_min": 0.09512798,
+      "original_max": 1.0,
+      "original_mean": 0.8527371180457746,
+      "coordinated_min": 0.25,
+      "coordinated_max": 1.0,
+      "coordinated_mean": 0.8346150568811301,
+      "mean_abs_change": 0.02165535872350686,
+      "max_abs_change": 0.15487202
+    },
+    "lidar": {
+      "original_min": 0.01478123,
+      "original_max": 1.0,
+      "original_mean": 0.6953787175704226,
+      "coordinated_min": 0.72,
+      "coordinated_max": 1.0,
+      "coordinated_mean": 0.8742471921089253,
+      "mean_abs_change": 0.18367259726351787,
+      "max_abs_change": 0.70521877
+    },
+    "camera": {
+      "original_min": 0.04599263,
+      "original_max": 1.0,
+      "original_mean": 0.7960216475396127,
+      "coordinated_min": 0.10837801123013416,
+      "coordinated_max": 1.0,
+      "coordinated_mean": 0.782952342254828,
+      "mean_abs_change": 0.02478912240743311,
+      "max_abs_change": 0.12000000000000001
+    }
+  }
+}

@@ -1,0 +1,7 @@
+Degraded Fixed Four-Sensor               ATE3D=2.498427 ATE2D=2.414955 Mean3D=1.783732 Max3D=8.167197 ZRMSE=0.640414
+Predicted Factor Reliability V1          ATE3D=2.247807 ATE2D=2.178191 Mean3D=1.517310 Max3D=8.873855 ZRMSE=0.555084
+Conservative Predictive FG               ATE3D=2.756705 ATE2D=2.540924 Mean3D=1.739103 Max3D=15.469485 ZRMSE=1.069173
+Oracle Factor Reliability                ATE3D=2.154354 ATE2D=2.106546 Mean3D=1.132526 Max3D=18.207807 ZRMSE=0.451335
+Conservative improvement vs Fixed: -10.34%
+Conservative improvement vs V1: -22.64%
+Conservative gap from Oracle: 27.96%

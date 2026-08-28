@@ -1,0 +1,6 @@
+best_epoch: 16
+MAE: 0.18494439
+RMSE: 0.31334674
+Correlation: 0.75360714
+BinaryAccuracy@0.5: 0.83963816
+Loss: 0.15375148

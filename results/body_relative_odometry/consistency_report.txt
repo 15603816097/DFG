@@ -1,0 +1,16 @@
+====================================================================================================
+BODY-FRAME RELATIVE ODOMETRY CONSISTENCY REPORT
+====================================================================================================
+Relative pairs: 4543
+LiDAR valid: 4543/4543
+Camera valid: 4543/4543
+Both valid: 4543/4543
+
+Translation disagreement [m] (mean / median / p90 / max): 0.062870 / 0.056692 / 0.113316 / 0.407820
+Rotation disagreement [deg] (mean / median / p90 / max): 0.134481 / 0.123683 / 0.223552 / 0.724781
+
+LiDAR translation step [m] (mean / median / p90 / max): 0.789668 / 0.822772 / 1.116713 / 1.299831
+Camera translation step [m] (mean / median / p90 / max): 0.845253 / 0.879684 / 1.200697 / 1.580619
+
+NOTE:
+Large LiDAR-vs-camera disagreement does not automatically mean the frame conversion is wrong; the two odometry estimators have different failure modes. Use this report to identify outliers before inserting BetweenFactors.

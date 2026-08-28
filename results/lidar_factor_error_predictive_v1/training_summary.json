@@ -1,0 +1,13 @@
+{
+  "best_epoch": 7,
+  "backend": "gru",
+  "test_metrics": {
+    "translation_mae": 0.03676755353808403,
+    "translation_rmse": 0.0511813759803772,
+    "rotation_mae_deg": 0.05326195806264877,
+    "rotation_rmse_deg": 0.06921090185642242
+  },
+  "train_windows": 3158,
+  "val_windows": 682,
+  "test_windows": 681
+}

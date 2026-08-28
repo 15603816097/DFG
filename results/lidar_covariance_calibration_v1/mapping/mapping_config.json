@@ -1,0 +1,12 @@
+{
+  "sigma0_translation": 0.15,
+  "sigma0_rotation": 0.012857142857142857,
+  "translation_prediction_p50": 0.0398985855281353,
+  "translation_prediction_p90": 0.05193626880645752,
+  "rotation_prediction_p50_deg": 0.13753864169120789,
+  "rotation_prediction_p90_deg": 0.1721019744873047,
+  "max_scale": 3.0,
+  "gamma": 2.0,
+  "pair_count": 4543,
+  "frame_count": 4544
+}
