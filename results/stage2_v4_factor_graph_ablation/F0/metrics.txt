@@ -1,0 +1,16 @@
+case: F0
+name: All Fixed
+gps_v4: False
+imu_v4: False
+camera_v4: False
+lidar_dynamic: False
+frames: 4544
+ATE3D: 2.4563402209770127
+ATE2D: 2.374576035500963
+Mean3D: 1.8237870394013393
+Max3D: 7.0998375703889725
+ZRMSE: 0.6284870188109922
+GPS_factors: 4544
+IMU_factors: 4543
+LiDAR_factors: 4543
+Camera_factors: 4461

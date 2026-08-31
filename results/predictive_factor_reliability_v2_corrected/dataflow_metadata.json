@@ -1,0 +1,8 @@
+{
+  "version": "v2_corrected",
+  "frames": 4544,
+  "gps_fix": "geodetic -> local meters before corruption/features",
+  "lidar_fix": "shared input uses physical LiDAR degradation",
+  "labels": "validated V1 factor-error labels retained; old features not reused",
+  "note": "final E8 does not consume the shared LiDAR head; dedicated LiDAR predictor supplies LiDAR covariance"
+}

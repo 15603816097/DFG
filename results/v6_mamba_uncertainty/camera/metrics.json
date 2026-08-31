@@ -1,0 +1,13 @@
+{
+  "sensor": "camera",
+  "backend": "mamba",
+  "best_val": -0.44136000323024666,
+  "test_loss": -0.287377884442156,
+  "test_mae": 0.16766756772994995,
+  "test_rmse": 0.20853839814662933,
+  "test_corr": 0.14913095719504646,
+  "uncertainty_min": 0.2924625277519226,
+  "uncertainty_max": 0.9569277763366699,
+  "uncertainty_mean": 0.4876304566860199,
+  "uncertainty_std": 0.2064899057149887
+}

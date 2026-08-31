@@ -1,0 +1,13 @@
+{
+  "sensor": "camera",
+  "backend": "gru",
+  "best_epoch": 1,
+  "best_val": -0.7114676458083771,
+  "test_mae": 0.15766973793506622,
+  "test_rmse": 0.20023390650749207,
+  "test_corr": 0.22742123978523757,
+  "uncertainty_test_min": 0.39740508794784546,
+  "uncertainty_test_max": 0.8098317384719849,
+  "uncertainty_test_mean": 0.4629477560520172,
+  "uncertainty_test_std": 0.11873698979616165
+}

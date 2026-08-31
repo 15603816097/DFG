@@ -1,0 +1,76 @@
+{
+  "version": "v3_same_source",
+  "frames": 4544,
+  "horizon": 3,
+  "feature_source": "/home/chenkeming/DFG/results/predictive_factor_reliability_v2_corrected/factor_reliability_training_data.npz",
+  "gps_imu_measurement_source": "/home/chenkeming/DFG/results/degraded_four_sensor_measurements/degraded_sensor_data.npz",
+  "camera_factor_source": "/home/chenkeming/DFG/results/degraded_four_sensor_measurements/degraded_camera_factor_data.npz",
+  "lidar_factor_source": "/home/chenkeming/DFG/results/lidar_physical_oracle_benchmark/physical_lidar_factor_data.npz",
+  "reference_poses": "/home/chenkeming/DFG/results/four_sensor_fixed_fg/poses.npy",
+  "label_mapping": "OracleReliabilityConfig / actual factor error",
+  "principle": "Each training target is recomputed from the same degraded measurement/factor stream represented by the corrected features.",
+  "label_stats": {
+    "gps": {
+      "min": 0.009999999776482582,
+      "max": 1.0,
+      "mean": 0.7453964908064579,
+      "median": 0.96945720911026
+    },
+    "imu": {
+      "min": 0.009999999776482582,
+      "max": 1.0,
+      "mean": 0.8472575103404151,
+      "median": 0.9682305157184601
+    },
+    "lidar": {
+      "min": 0.009999999776482582,
+      "max": 1.0,
+      "mean": 0.7044715334335014,
+      "median": 0.937380850315094
+    },
+    "camera": {
+      "min": 0.009999999776482582,
+      "max": 1.0,
+      "mean": 0.7888658823507746,
+      "median": 0.9670273661613464
+    }
+  },
+  "error_stats": {
+    "gps_error_m": {
+      "min": 0.0,
+      "max": 27.99990290769831,
+      "mean": 2.9038240278321745,
+      "median": 0.8806056881365686
+    },
+    "imu_rotation_error_deg": {
+      "min": 0.0,
+      "max": 5.088186486834473,
+      "mean": 0.6730652624615644,
+      "median": 0.3593610115006879
+    },
+    "lidar_translation_error_m": {
+      "min": 0.0,
+      "max": 0.5018466714287478,
+      "mean": 0.05578638250094382,
+      "median": 0.04150719494694865
+    },
+    "lidar_rotation_error_deg": {
+      "min": 0.0,
+      "max": 2.7637786397402695,
+      "mean": 0.5608494712994434,
+      "median": 0.23523235910765103
+    },
+    "camera_translation_error_m": {
+      "min": 0.0,
+      "max": 1.4716008229589275,
+      "mean": 0.061937629066062726,
+      "median": 0.042843734487207255
+    },
+    "camera_rotation_error_deg": {
+      "min": 0.0,
+      "max": 3.9612180616629913,
+      "mean": 0.5693329578892653,
+      "median": 0.23726823185897689
+    }
+  }
+}

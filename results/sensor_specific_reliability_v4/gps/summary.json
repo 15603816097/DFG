@@ -1,0 +1,15 @@
+{
+  "sensor": "gps",
+  "backend": "gru",
+  "best_epoch": 29,
+  "best_validation_mse": 0.04819760471582413,
+  "test": {
+    "mae": 0.1497916160261091,
+    "rmse": 0.24481367526232922,
+    "corr": 0.7083769216410979
+  },
+  "prediction_min": 0.008751239627599716,
+  "prediction_max": 1.0,
+  "prediction_mean": 0.746415139060766,
+  "prediction_std": 0.3086479980430124
+}

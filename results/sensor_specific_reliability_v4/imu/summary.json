@@ -1,0 +1,15 @@
+{
+  "sensor": "imu",
+  "backend": "gru",
+  "best_epoch": 6,
+  "best_validation_mse": 0.018760735169053078,
+  "test": {
+    "mae": 0.15229454817763352,
+    "rmse": 0.20605486799885117,
+    "corr": 0.22967834745176385
+  },
+  "prediction_min": 0.23531949520111084,
+  "prediction_max": 1.0,
+  "prediction_mean": 0.8435461978874051,
+  "prediction_std": 0.19951174850872805
+}

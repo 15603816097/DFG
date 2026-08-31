@@ -1,0 +1,16 @@
+case: F4
+name: GPS + IMU V4
+gps_v4: True
+imu_v4: True
+camera_v4: False
+lidar_dynamic: False
+frames: 4544
+ATE3D: 2.3317484566192452
+ATE2D: 2.0347435032869083
+Mean3D: 1.7092809994299205
+Max3D: 9.061234569547926
+ZRMSE: 1.1388018882922308
+GPS_factors: 4544
+IMU_factors: 4543
+LiDAR_factors: 4543
+Camera_factors: 4461

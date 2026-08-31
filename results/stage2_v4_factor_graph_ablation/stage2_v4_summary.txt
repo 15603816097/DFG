@@ -1,0 +1,16 @@
+STAGE 2 — 0027 V4 FACTOR-GRAPH ABLATION
+==========================================================================================
+
+01. F5 GPS + Camera V4: ATE3D=2.085273, ATE2D=1.866027, ZRMSE=0.930758
+02. F1 GPS V4: ATE3D=2.196795, ATE2D=2.022512, ZRMSE=0.857528
+03. F7 GPS + IMU + Camera V4; LiDAR fixed: ATE3D=2.322978, ATE2D=2.138193, ZRMSE=0.907940
+04. F4 GPS + IMU V4: ATE3D=2.331748, ATE2D=2.034744, ZRMSE=1.138802
+05. F0 All Fixed: ATE3D=2.456340, ATE2D=2.374576, ZRMSE=0.628487
+06. F6 IMU + Camera V4: ATE3D=2.807308, ATE2D=2.534945, ZRMSE=1.206247
+07. F2 IMU V4: ATE3D=2.819787, ATE2D=2.509381, ZRMSE=1.286159
+08. F3 Camera V4: ATE3D=2.913700, ATE2D=2.532798, ZRMSE=1.440340
+09. F8 GPS + IMU + Camera V4; LiDAR dynamic lambda=1: ATE3D=2.990344, ATE2D=2.663660, ZRMSE=1.359070
+
+F8 improvement vs F0: -21.74%
+F8 improvement vs F7: -28.73%
+NOTE: 0027 remains development/calibration evidence, not held-out cross-sequence test evidence.

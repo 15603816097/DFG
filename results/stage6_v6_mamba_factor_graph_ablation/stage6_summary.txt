@@ -1,0 +1,23 @@
+Stage 6: V5-GRU vs V6 Official Mamba Factor-Graph Comparison
+==========================================================================================
+
+Ranking:
+01. G3_hybrid_gps_mamba_imu_gru_camera_mamba: ATE3D=2.049113, ATE2D=2.027155, ZRMSE=0.299177, vs_fixed=+16.58%
+02. G2_v6_mamba_all_uncertainty: ATE3D=2.349285, ATE2D=2.165112, ZRMSE=0.911828, vs_fixed=+4.36%
+03. G1_v5_gru_all_uncertainty: ATE3D=2.371267, ATE2D=2.318957, ZRMSE=0.495328, vs_fixed=+3.46%
+04. G0_all_fixed: ATE3D=2.456340, ATE2D=2.374576, ZRMSE=0.628487, vs_fixed=+0.00%
+05. G4_gps_mamba_only: ATE3D=2.498950, ATE2D=2.373312, ZRMSE=0.782396, vs_fixed=-1.73%
+06. G5_imu_mamba_only: ATE3D=2.896780, ATE2D=2.551621, ZRMSE=1.371337, vs_fixed=-17.93%
+07. G6_camera_mamba_only: ATE3D=2.985051, ATE2D=2.568245, ZRMSE=1.521397, vs_fixed=-21.52%
+
+Primary encoder comparison:
+G1 V5-GRU ATE3D   = 2.371267
+G2 V6-Mamba ATE3D = 2.349285
+Mamba gain vs GRU = +0.93%
+
+Sanity targets from the previously validated Stage 5 run:
+G0 should reproduce approximately 2.456340 m.
+G1 should reproduce approximately 2.371267 m.
+Small floating-point differences are acceptable; large differences require investigation.
+
+Important: LiDAR policy is frozen between G1/G2/G3. Therefore the primary G1-vs-G2 change is the GPS/IMU/Camera predictor source.

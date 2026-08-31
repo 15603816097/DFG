@@ -1,0 +1,13 @@
+{
+  "sensor": "gps",
+  "backend": "gru",
+  "best_epoch": 9,
+  "best_val": -1.0631885552270846,
+  "test_mae": 0.14114922285079956,
+  "test_rmse": 0.20413272082805634,
+  "test_corr": 0.8003975447985059,
+  "uncertainty_test_min": 0.08276070654392242,
+  "uncertainty_test_max": 0.8566898703575134,
+  "uncertainty_test_mean": 0.3566533625125885,
+  "uncertainty_test_std": 0.3049892485141754
+}

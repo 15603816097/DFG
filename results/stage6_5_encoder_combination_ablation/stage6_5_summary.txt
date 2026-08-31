@@ -1,0 +1,31 @@
+Stage 6.5 Encoder Combination Analysis
+==========================================================================================
+
+01. D5_mamba_gru_mamba         ATE3D=2.049113 ATE2D=2.027155 ZRMSE=0.299177 vs_fixed=+16.58%
+02. D4_mamba_mamba_gru         ATE3D=2.294114 ATE2D=2.160164 ZRMSE=0.772431 vs_fixed=+6.60%
+03. D6_gru_mamba_mamba         ATE3D=2.319259 ATE2D=2.267597 ZRMSE=0.486794 vs_fixed=+5.58%
+04. D7_mamba_mamba_mamba       ATE3D=2.349285 ATE2D=2.165112 ZRMSE=0.911828 vs_fixed=+4.36%
+05. D0_gru_gru_gru             ATE3D=2.371267 ATE2D=2.318957 ZRMSE=0.495328 vs_fixed=+3.46%
+06. D2_gru_mamba_gru           ATE3D=2.372594 ATE2D=2.324440 ZRMSE=0.475586 vs_fixed=+3.41%
+07. D3_gru_gru_mamba           ATE3D=2.522709 ATE2D=2.471308 ZRMSE=0.506653 vs_fixed=-2.70%
+08. D1_mamba_gru_gru           ATE3D=2.587820 ATE2D=2.470079 ZRMSE=0.771701 vs_fixed=-5.35%
+
+Encoder effects (Mamba-GRU; negative is beneficial for error metrics):
+ATE3D   GPS_Mamba_minus_GRU_main         -0.076374
+ATE3D   IMU_Mamba_minus_GRU_main         -0.048914
+ATE3D   Camera_Mamba_minus_GRU_main      -0.096357
+ATE3D   GPSxIMU_interaction              +0.104295
+ATE3D   GPSxCamera_interaction           -0.290822
+ATE3D   IMUxCamera_interaction           +0.194551
+ATE2D   GPS_Mamba_minus_GRU_main         -0.139948
+ATE2D   IMU_Mamba_minus_GRU_main         -0.092546
+ATE2D   Camera_Mamba_minus_GRU_main      -0.085617
+ATE2D   GPSxIMU_interaction              +0.013135
+ATE2D   GPSxCamera_interaction           -0.266743
+ATE2D   IMUxCamera_interaction           +0.119339
+ZRMSE   GPS_Mamba_minus_GRU_main         +0.197694
+ZRMSE   IMU_Mamba_minus_GRU_main         +0.143445
+ZRMSE   Camera_Mamba_minus_GRU_main      -0.077649
+ZRMSE   GPSxIMU_interaction              +0.326492
+ZRMSE   GPSxCamera_interaction           -0.177830
+ZRMSE   IMUxCamera_interaction           +0.305902

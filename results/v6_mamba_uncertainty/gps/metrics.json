@@ -1,0 +1,13 @@
+{
+  "sensor": "gps",
+  "backend": "mamba",
+  "best_val": -0.7020820250565355,
+  "test_loss": -0.6856921653855931,
+  "test_mae": 0.12742504477500916,
+  "test_rmse": 0.18829277157783508,
+  "test_corr": 0.8367237157665948,
+  "uncertainty_min": 0.09852509945631027,
+  "uncertainty_max": 0.9536876678466797,
+  "uncertainty_mean": 0.31968170404434204,
+  "uncertainty_std": 0.28936341404914856
+}

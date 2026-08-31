@@ -1,0 +1,13 @@
+{
+  "sensor": "imu",
+  "backend": "gru",
+  "best_epoch": 7,
+  "best_val": -1.8131819800897078,
+  "test_mae": 0.15349076688289642,
+  "test_rmse": 0.19313529133796692,
+  "test_corr": 0.2891570340090791,
+  "uncertainty_test_min": 0.10430620610713959,
+  "uncertainty_test_max": 0.6857425570487976,
+  "uncertainty_test_mean": 0.17356307804584503,
+  "uncertainty_test_std": 0.11991781741380692
+}

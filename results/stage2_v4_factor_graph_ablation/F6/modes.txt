@@ -1,0 +1,4 @@
+gps=fixed
+imu=predictive
+lidar=fixed
+camera=predictive

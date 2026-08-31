@@ -1,0 +1,13 @@
+{
+  "sensor": "imu",
+  "backend": "mamba",
+  "best_val": -1.157609221610156,
+  "test_loss": 0.6817661173303019,
+  "test_mae": 0.1600458174943924,
+  "test_rmse": 0.20441946387290955,
+  "test_corr": 0.21229482576272216,
+  "uncertainty_min": 0.08288795500993729,
+  "uncertainty_max": 0.8897104859352112,
+  "uncertainty_mean": 0.13817760348320007,
+  "uncertainty_std": 0.13093391060829163
+}

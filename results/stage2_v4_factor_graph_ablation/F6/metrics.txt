@@ -1,0 +1,16 @@
+case: F6
+name: IMU + Camera V4
+gps_v4: False
+imu_v4: True
+camera_v4: True
+lidar_dynamic: False
+frames: 4544
+ATE3D: 2.8073078317145193
+ATE2D: 2.534944807737797
+Mean3D: 2.130795620617921
+Max3D: 7.431504837432893
+ZRMSE: 1.2062471072416545
+GPS_factors: 4544
+IMU_factors: 4543
+LiDAR_factors: 4543
+Camera_factors: 4461
