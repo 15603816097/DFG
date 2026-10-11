@@ -1,0 +1,24 @@
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+.env/
+
+# Local KITTI datasets
+/dataset/
+
+# Stage 7 generated data, predictions and experiment results
+/results/cross_sequence/
+
+# Accidental Git temporary file in project root
+/FETCH_HEAD
+
+# System and editor files
+.DS_Store
+.vscode/
+.idea/
