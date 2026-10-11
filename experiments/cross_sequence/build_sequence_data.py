@@ -108,6 +108,16 @@ def build_one(sequence_name: str):
     if n < 100:
         raise RuntimeError(f"{sequence_name}: suspicious frame count {n}")
 
+    # Frozen navigation-sensor attitude for pose-0 initialization.
+    # Read from OXTS measurements, never from evaluation ground truth.
+    oxts0 = il[0]
+    initial_oxts_rpy = np.asarray(
+        [oxts0["roll"], oxts0["pitch"], oxts0["yaw"]],
+        dtype=np.float64,
+    )
+    if initial_oxts_rpy.shape != (3,) or not np.isfinite(initial_oxts_rpy).all():
+        raise ValueError(f"{sequence_name}: invalid initial OXTS RPY")
+
     dev=load_balanced_plan(DEV_PLAN_DIR)
     plan=normalized_plan(dev,n)
     seed=int(plan["seed"])
@@ -135,6 +145,7 @@ def build_one(sequence_name: str):
     np.savez_compressed(out/"features.npz",gps_features=feat["gps"],imu_features=feat["imu"],camera_features=feat["camera"])
     np.savez_compressed(out/"sensor_data.npz",
         clean_gps_local=clean,degraded_gps_local=dgps,degraded_imu_acc=dacc,degraded_imu_gyro=dgyro,
+        initial_oxts_rpy=initial_oxts_rpy,
         timestamps_seconds=_ts_seconds(timestamps),
         gps_severity=plan["severity"]["gps"],imu_severity=plan["severity"]["imu"],
         camera_severity=plan["severity"]["camera"],lidar_severity=plan["severity"]["lidar"])
