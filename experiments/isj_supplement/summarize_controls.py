@@ -9,7 +9,12 @@ the manuscript. Differences are descriptive, not inferential statistics.
 import argparse
 import csv
 import math
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from experiments.cross_sequence.stage7_config import TEST_SEQUENCES, OUT_ROOT
 
