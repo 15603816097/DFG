@@ -107,3 +107,61 @@ sequences and label the resulting analysis as post hoc.
 3. These controls isolate the contribution of time-varying evidential
    uncertainty, but do not replace new degradation-level studies,
    an independent runtime study, or a tuned adaptive-FGO comparison.
+
+
+## Next phase: fixed-graph convergence diagnosis
+
+After three-sequence controls have been generated, evaluate the ORIGINAL
+fixed-noise graph objective at Stage-1 and Stage-2 solutions:
+
+~~~bash
+python experiments/isj_supplement/diagnose_fixed_convergence.py \
+  --sequence 2011_10_03_drive_0042_sync
+~~~
+
+If necessary, run an additional unchanged-graph optimizer pass (this does
+**not** overwrite the original fixed-stage or supplemental controls):
+
+~~~bash
+python experiments/isj_supplement/diagnose_fixed_convergence.py \
+  --sequence 2011_10_03_drive_0042_sync --third-pass
+~~~
+
+Results: results/cross_sequence/<sequence>/isj_fixed_convergence_diagnostic.json
+and, if requested, factor_graph/ISJ_DIAG_FIXED_THIRD_PASS/.
+
+ATE3D can change even when graph loss barely changes; objective values are
+needed to discuss numerical convergence. A third pass with the original
+100-iteration LM limit is exploratory and cannot prove global optimality.
+
+## Next phase: residual-adaptive covariance conventional baseline
+
+Run just one sequence for a smoke test:
+
+~~~bash
+python -m pytest tests/test_isj_adaptive_common.py -v
+python experiments/isj_supplement/run_residual_adaptive.py \
+  --sequence 2011_10_03_drive_0034_sync --mode gps
+~~~
+
+Then all three sequences, two frozen schemes (GPS-only or GPS/IMU/Camera):
+
+~~~bash
+python experiments/isj_supplement/run_residual_adaptive.py \
+  --sequence all --mode both
+~~~
+
+This benchmark computes the predeclared normalized measurement residuals
+using FINAL_S0_fixed/poses.npy, inflates covariance once via
+sigma/sigma0 = clip(sqrt(max(1, norm(residual)/c)),1,4), then runs the
+same second-stage GTSAM LM optimizer from the SAME Stage-1 poses.
+c=sqrt(chi-square 0.95 quantile), 2.795 for 3D and 3.548 for 6D.
+LiDAR always keeps its original fixed covariance.
+The results appear under factor_graph/ISJ_RESADAPT_*/ and in
+isj_residual_adaptive_results.csv. No trained model or ground-truth
+positions are used in weight computation. This is a **post-hoc,
+conventional baseline**, not a claimed SOTA implementation.
+
+The new script neither imports raw KITTI image data nor re-runs odometry.
+It depends on saved Stage-7 measurements and fixed-stage poses, and
+requires NumPy and GTSAM in the current Python environment.
