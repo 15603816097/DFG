@@ -72,7 +72,7 @@ def build_factor_graph(m, initial_poses: np.ndarray, adaptive_sensors=()):
     if unknown:
         raise ValueError(f"Unknown adaptation sensors: {sorted(unknown)}")
     cfg = FourSensorFactorConfig()
-    gt_poses = [s7._pose3_from_matrix(gtsam, p) for p in initial_poses]
+    stage1_poses = [s7._pose3_from_matrix(gtsam, p) for p in initial_poses]
     first_pose = s7.initial_pose_from_oxts(gtsam, m)
     graph = gtsam.NonlinearFactorGraph()
     initial = gtsam.Values()
@@ -86,7 +86,7 @@ def build_factor_graph(m, initial_poses: np.ndarray, adaptive_sensors=()):
     ))
 
     times = np.asarray(m.timestamps, dtype=float)
-    for i, pose in enumerate(gt_poses):
+    for i, pose in enumerate(stage1_poses):
         initial.insert(i, pose)
 
     for i in range(n):
@@ -94,7 +94,7 @@ def build_factor_graph(m, initial_poses: np.ndarray, adaptive_sensors=()):
             gtsam.Rot3(), gtsam.Point3(*map(float, m.gps_local[i, :3])))
         gps_weight = 1.0
         if "gps" in selected:
-            r_gps = (np.asarray(gt_poses[i].translation(), float)
+            r_gps = (np.asarray(stage1_poses[i].translation(), float)
                      - np.asarray(m.gps_local[i, :3], float)) / GPS_FIXED
             gps_weight = sigma_multiplier(r_gps, CHI_3D_95)
         stats["gps"].append(gps_weight)
@@ -110,7 +110,7 @@ def build_factor_graph(m, initial_poses: np.ndarray, adaptive_sensors=()):
         dt = float(times[i + 1] - times[i])
         if not np.isfinite(dt) or dt <= 0 or dt > 1:
             dt = 0.1
-        estimate_delta = gt_poses[i].between(gt_poses[i + 1])
+        estimate_delta = stage1_poses[i].between(stage1_poses[i + 1])
         imu_measurement = s7._imu_between_pose(gtsam, m.imu_gyro[i], dt)
         imu_weight = 1.0
         if "imu" in selected:
