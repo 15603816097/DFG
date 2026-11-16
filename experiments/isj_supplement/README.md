@@ -195,3 +195,24 @@ Interpretation:
   more LM iterations, treat the baseline solver convergence as unresolved.
 - Do not describe observed ATE reductions as proof of a specific optimizer
   failure mode without checking the objective differences.
+
+
+## Audit learned dynamic-FGO convergence before the next comparison
+
+Especially for 0042, fixed-FGO Stage 1 did not fully settle within its
+initial optimization pass. Thus dynamic V5 and V6 second passes must also be
+audited on **their own** graph objectives before claiming a fully controlled
+comparison. The script below only loads frozen predictions, saved poses, and
+the existing measurements; it does not alter original results.
+
+~~~bash
+python experiments/isj_supplement/audit_dynamic_convergence.py \
+  --sequence 2011_10_03_drive_0042_sync --refine
+python experiments/isj_supplement/audit_dynamic_convergence.py \
+  --sequence all --refine
+~~~
+
+Output: results/cross_sequence/<sequence>/isj_dynamic_convergence_audit.json.
+Each model's objective is only comparable across optimization passes of the
+SAME model, since GRU and Mamba use different factor covariance values.
+The continuation LM pass checks local numerical progress, not global optimality.
