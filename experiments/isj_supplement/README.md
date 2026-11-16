@@ -165,3 +165,33 @@ conventional baseline**, not a claimed SOTA implementation.
 The new script neither imports raw KITTI image data nor re-runs odometry.
 It depends on saved Stage-7 measurements and fixed-stage poses, and
 requires NumPy and GTSAM in the current Python environment.
+
+
+## Diagnose fixed-FGO convergence (especially drive 0042)
+
+The original fixed FGO improved considerably when run a second time on
+drive 0042. ATE alone does not indicate whether the solver minimized the
+same objective or how well the first pass converged. This separate audit
+rebuilds the fixed Stage-7 graph with exactly the frozen original factor
+types, compares its **graph objectives** for the saved first- and
+second-pass pose arrays, and optionally tests another 100 LM iterations.
+It does not overwrite any original Stage-7 outputs.
+
+~~~bash
+git pull --ff-only
+python experiments/isj_supplement/audit_fixed_convergence.py --sequence all
+python experiments/isj_supplement/audit_fixed_convergence.py --sequence 2011_10_03_drive_0042_sync --refine
+~~~
+
+The resulting diagnostic JSON is stored separately at
+results/cross_sequence/<sequence>/isj_fixed_convergence_audit.json.
+
+Interpretation:
+- If the second pass substantially reduces the same fixed-graph objective,
+  the original first stage was not at the same optimum.
+- If ATE improves but objective barely moves, inspect sensitivity and
+  trajectory changes: ATE is not the objective optimized by GTSAM.
+- If even the second saved fixed trajectory improves materially under
+  more LM iterations, treat the baseline solver convergence as unresolved.
+- Do not describe observed ATE reductions as proof of a specific optimizer
+  failure mode without checking the objective differences.
