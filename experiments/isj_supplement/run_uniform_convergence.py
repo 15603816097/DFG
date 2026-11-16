@@ -10,6 +10,7 @@ GTSAM LM optimization under the same numeric stopping rule.
 - Dynamic: FINAL_S1_v5_gru, FINAL_S2_v6_all_mamba
 - Reliability-only: ABL_V5_GRU_RELIABILITY_ONLY / ABL_V6_MAMBA_RELIABILITY_ONLY
 - Constant/permuted uncertainty: all 8 ISJ_CTRL_* controls
+- Traditional residual-adaptive: GPS-only and GPS/IMU/Camera variants
 
 No KITTI Raw, Mamba installation or model retraining needed. Every continuation
 starts from the already saved second-stage solution (thus NOT a fresh 2-stage
@@ -42,6 +43,7 @@ from experiments.isj_supplement.audit_dynamic_convergence import (
     values_from_poses,
 )
 from experiments.isj_supplement.run_controls import transform_uncertainty
+from experiments.isj_supplement.adaptive_fg_common import build_factor_graph
 
 DEFAULT_SEEDS = (11, 23, 47)
 
@@ -62,6 +64,14 @@ def available_cases(family: str) -> list[dict]:
     ]
     if family == "reliability":
         return reliability
+    adaptive = [
+        {"name": "ISJ_RESADAPT_GPS",
+         "type": "adaptive", "sensors": ("gps",)},
+        {"name": "ISJ_RESADAPT_GPS_IMU_CAMERA",
+         "type": "adaptive", "sensors": ("gps", "imu", "camera")},
+    ]
+    if family == "adaptive":
+        return adaptive
     if family not in ("controls", "all", "ablations"):
         raise ValueError(f"Unknown family {family}")
     controls = []
@@ -85,7 +95,7 @@ def available_cases(family: str) -> list[dict]:
         return controls
     if family == "ablations":
         return reliability + controls
-    return cases + reliability + controls
+    return cases + reliability + controls + adaptive
 
 
 def same_graph(gtsam, seq: str, m, spec: dict):
@@ -95,6 +105,13 @@ def same_graph(gtsam, seq: str, m, spec: dict):
         return graph, counts
     if kind == "dynamic":
         return build_dynamic_graph(gtsam, seq, m, spec["source"]), None
+    if kind == "adaptive":
+        fixed_path = sequence_out(seq) / "factor_graph" / "FINAL_S0_fixed" / "poses.npy"
+        fixed_poses = check_saved_pose(fixed_path, len(m.gps_local))
+        graph, _initial, stats = build_factor_graph(
+            m, fixed_poses, adaptive_sensors=spec["sensors"]
+        )
+        return graph, stats.get("factor_counts")
     if kind == "reliability":
         original_confidence = s7.confidence
         try:
@@ -148,6 +165,16 @@ def refine_case(gtsam, seq, m, spec, max_passes, objective_rtol, shift_tol):
     if abs(saved_ate - original_metrics["ATE3D"]) > 1e-4:
         raise ValueError(f"{name}: source poses/metrics mismatch. "
                          "Check original experimental file versions.")
+    if spec["type"] == "adaptive":
+        # Reconstruction must be exactly the SAME first-stage-residual-frozen
+        # graph used to create the original adaptive result.
+        expected_cost = float(saved_metrics["graph_final_objective"])
+        if not math.isclose(cost, expected_cost, rel_tol=1e-8, abs_tol=1e-4):
+            raise ValueError(
+                f"{name}: reconstructed graph cost {cost:.9f} differs from "
+                f"saved original objective {expected_cost:.9f}; "
+                "stop rather than mixing inconsistent adaptive baselines"
+            )
 
     history = [{
         "extra_pass": 0,
@@ -256,7 +283,7 @@ def main():
     parser.add_argument("--sequence", default="all",
                         choices=("all",) + TEST_SEQUENCES)
     parser.add_argument("--family", default="core",
-                        choices=("core", "controls", "reliability", "ablations", "all"))
+                        choices=("core", "controls", "reliability", "ablations", "adaptive", "all"))
     parser.add_argument("--max-extra-passes", type=int, default=4)
     parser.add_argument("--objective-rtol", type=float, default=1e-7)
     parser.add_argument("--shift-tol", type=float, default=1e-3,
