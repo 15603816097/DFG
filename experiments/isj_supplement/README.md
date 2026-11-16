@@ -216,3 +216,44 @@ Output: results/cross_sequence/<sequence>/isj_dynamic_convergence_audit.json.
 Each model's objective is only comparable across optimization passes of the
 SAME model, since GRU and Mamba use different factor covariance values.
 The continuation LM pass checks local numerical progress, not global optimality.
+
+
+## Uniform multi-pass convergence analysis (fixed, GRU/Mamba, controls)
+
+The 0042 dynamic audit found GRU ATE3D changing from 9.8812 m to 8.8219 m
+after **one** additional unchanged LM pass; Mamba moved from 8.5036 to
+8.5171 m. The audit_dynamic_convergence.py --refine command always starts
+from the original saved result and **does not chain** successive invocations.
+
+Use the script below to chain extra optimization passes on each method's own
+**original graph**, applying the same predeclared stopping rule. Every method
+starts from its existing saved Stage-7 second-stage solution, and the script
+never modifies the original Stage-7 or ISJ_CTRL_* results.
+
+~~~bash
+python -m pytest tests/test_isj_uniform_convergence.py -v
+python experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence 2011_10_03_drive_0042_sync --family core \
+  --max-extra-passes 4
+python experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence all --family core --max-extra-passes 4
+
+# Only after reviewing core convergence, extend to all uncertainty controls:
+python experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence all --family controls --max-extra-passes 4
+~~~
+
+Default stopping rule: both the relative improvement of the SAME factor
+graph objective is <=1e-7 **and** the RMSE of translation changes is <=1 mm,
+or else the maximum number of additional passes is exhausted. Each pass
+uses the original GTSAM LM maxIterations=100, relativeErrorTol=1e-7.
+
+Each result is under
+factor_graph/ISJ_CONVERGENCE_<ORIGINAL_CASE>/, while per-sequence CSV files
+are isj_convergence_core_results.csv / isj_convergence_controls_results.csv.
+The output reports if a method was NOT stable under this strict criterion.
+It does not infer global optimality, equal compute time, or ground truth
+independence. Compare ATE only for methods whose numerical convergence
+status is appropriately documented; objective numbers across different
+noise-weighted graphs are not directly comparable. The analysis remains
+post-hoc exploratory because the sequences had been viewed before.
