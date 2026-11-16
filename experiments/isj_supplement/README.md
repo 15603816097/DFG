@@ -290,3 +290,47 @@ Case families: core (fixed2 + 2 dynamic); controls (8 constant/permuted);
 reliability (2 existing reliability-only); ablations (all 10 alternatives);
 all (13 total). Historical, equal-budget original Stage-7 ATE metrics stay
 available separately from the continuation-to-tolerance exploratory results.
+
+
+## Convergence-controlled publication table (no recomputation)
+
+Once all sequences have isj_convergence_core_results.csv and
+isj_convergence_ablations_results.csv:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_summarize_converged.py -v
+python experiments/isj_supplement/summarize_converged.py
+~~~
+
+Outputs results/cross_sequence/isj_converged_summary.csv. It combines exact
+saved ATE3D for Fixed2, GRU/Mamba full, reliability-only, constant uncertainty,
+and the three shuffled-uncertainty seeds, reporting signed gains. It also
+checks every case's \`stationary_under_rule\` field and preserves the caveat
+that 0034 fixed2 has not crossed the stricter 1-mm shift threshold after four
+additional passes. This is an exploratory convergence-controlled table;
+do not silently replace or overwrite the original fixed-budget Stage-7 table.
+
+## Conventional residual-adaptive baseline: recommended next sequence
+
+The prior Stage-7 / uncertainty experiments are ready for conventional
+residual-adaptive comparison. To test the predeclared GPS-only and
+GPS/IMU/Camera residual-inflation schemes, without needing KITTI Raw:
+
+~~~bash
+python -m pytest tests/test_isj_adaptive_common.py -v
+python -u experiments/isj_supplement/run_residual_adaptive.py \
+  --sequence 2011_10_03_drive_0034_sync --mode both
+
+# After inspecting the first run:
+python -u experiments/isj_supplement/run_residual_adaptive.py \
+  --sequence all --mode both
+~~~
+
+The baseline first performs one frozen covariance inflation using residuals
+of the saved Fixed1 trajectory, then starts an equal initial second-stage LM
+pass. Those original saved adaptive baseline results must be kept separate
+from the post-hoc uniform continuation results. For apples-to-apples
+convergence control on adaptive cases, assess their own graph objective
+and continuation just as for GRU/Mamba; avoid claiming solver-equivalent
+accuracy when convergence differences have not been tested.
