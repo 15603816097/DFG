@@ -334,3 +334,35 @@ from the post-hoc uniform continuation results. For apples-to-apples
 convergence control on adaptive cases, assess their own graph objective
 and continuation just as for GRU/Mamba; avoid claiming solver-equivalent
 accuracy when convergence differences have not been tested.
+
+
+## Convergence-control of traditional residual-adaptive baselines
+
+After run_residual_adaptive.py --sequence all --mode both has produced
+ISJ_RESADAPT_* original pose arrays and nested metrics.json files, use:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_uniform_convergence.py -v
+python -u experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence all --family adaptive --max-extra-passes 4
+~~~
+
+The audit **reconstructs the identical residual-adaptive graph** from
+FINAL_S0_fixed/poses.npy for each sensor set and verifies that the
+reconstructed objective at the SAVED solution matches the original
+\`graph_final_objective\` to tight tolerance, before any continuation.
+This catches accidental comparisons across differently constructed graphs.
+It then applies exactly the same extra LM pass and stopping test used for
+all other FGO families, without overwriting original saved results.
+
+The new convergence files are stored in
+factor_graph/ISJ_CONVERGENCE_ISJ_RESADAPT_*/ and
+isj_convergence_adaptive_results.csv. Together with the existing
+isj_convergence_core_results.csv, these permit a converged-method comparison.
+The original residual-adaptive results are a *single predeclared outer*
+covariance update: they are NOT a comprehensive literature baseline.
+If the first-stage residual covariance inflation harms GPS-related ATE,
+investigate sensor-specific inflation fractions from the ORIGINAL
+ISJ_RESADAPT_*/metrics.json (sigma_statistics) rather than retuning based
+on these already-inspected test sequences.
