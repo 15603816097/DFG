@@ -158,9 +158,8 @@ def refine_case(gtsam, seq, m, spec, max_passes, objective_rtol, shift_tol):
     original_file = source_dir / "metrics.json"
     if not original_file.is_file():
         raise FileNotFoundError(original_file)
-    saved_metrics = json.loads(original_file.read_text(encoding="utf-8"))
-    if "metrics" in saved_metrics:
-        saved_metrics = saved_metrics["metrics"]
+    saved_payload = json.loads(original_file.read_text(encoding="utf-8"))
+    saved_metrics = saved_payload.get("metrics", saved_payload)
     saved_ate = float(saved_metrics["ATE3D"])
     if abs(saved_ate - original_metrics["ATE3D"]) > 1e-4:
         raise ValueError(f"{name}: source poses/metrics mismatch. "
@@ -168,7 +167,7 @@ def refine_case(gtsam, seq, m, spec, max_passes, objective_rtol, shift_tol):
     if spec["type"] == "adaptive":
         # Reconstruction must be exactly the SAME first-stage-residual-frozen
         # graph used to create the original adaptive result.
-        expected_cost = float(saved_metrics["graph_final_objective"])
+        expected_cost = float(saved_payload["graph_final_objective"])
         if not math.isclose(cost, expected_cost, rel_tol=1e-8, abs_tol=1e-4):
             raise ValueError(
                 f"{name}: reconstructed graph cost {cost:.9f} differs from "
