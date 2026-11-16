@@ -257,3 +257,36 @@ independence. Compare ATE only for methods whose numerical convergence
 status is appropriately documented; objective numbers across different
 noise-weighted graphs are not directly comparable. The analysis remains
 post-hoc exploratory because the sequences had been viewed before.
+
+
+## Reliability-only controls under the same convergence criterion
+
+The original Stage-7 reliability-only ablations live under
+factor_graph/ABL_V5_GRU_RELIABILITY_ONLY/ and
+factor_graph/ABL_V6_MAMBA_RELIABILITY_ONLY/.
+They used the same first-stage fixed warm start, but may have exited
+LM before the same strict outer stopping condition.
+
+The uniform convergence script now supports these cases as well.
+It reconstructs the original graph by fixing s7.confidence(u)=1.0
+for all sensors, retaining frozen reliability predictions and original
+noise anchors. It reads the original ABL_*/poses.npy without overwriting
+their metrics, and writes new convergence results in ISJ_CONVERGENCE_ABL_*.
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_uniform_convergence.py -v
+# First inspect 0042's reliability-only and 8 shuffled/constant controls
+python -u experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence 2011_10_03_drive_0042_sync \
+  --family ablations --max-extra-passes 4
+
+# Then execute remaining sequences with the same fixed protocol
+python -u experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence all --family ablations --max-extra-passes 4
+~~~
+
+Case families: core (fixed2 + 2 dynamic); controls (8 constant/permuted);
+reliability (2 existing reliability-only); ablations (all 10 alternatives);
+all (13 total). Historical, equal-budget original Stage-7 ATE metrics stay
+available separately from the continuation-to-tolerance exploratory results.
