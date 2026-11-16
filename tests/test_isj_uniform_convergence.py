@@ -13,7 +13,7 @@ def test_core_cases_include_fixed_and_both_frozen_encoders():
 def test_all_cases_unique_and_permuted_seeds_frozen():
     cases = available_cases("all")
     names = [case["name"] for case in cases]
-    assert len(cases) == 11
+    assert len(cases) == 13
     assert len(names) == len(set(names))
     for model in ("GRU", "MAMBA"):
         assert f"ISJ_CTRL_{model}_MEAN_U" in names
@@ -26,3 +26,17 @@ def test_controls_is_subset_of_all():
     all_names = {c["name"] for c in available_cases("all")}
     assert len(control_names) == 8
     assert control_names.issubset(all_names)
+
+
+def test_reliability_only_ablations_in_all_and_ablations():
+    reliability = available_cases("reliability")
+    assert [case["name"] for case in reliability] == [
+        "ABL_V5_GRU_RELIABILITY_ONLY",
+        "ABL_V6_MAMBA_RELIABILITY_ONLY",
+    ]
+    assert {case["type"] for case in reliability} == {"reliability"}
+    all_names = {x["name"] for x in available_cases("all")}
+    ablations = {x["name"] for x in available_cases("ablations")}
+    assert len(ablations) == 10
+    assert set(x["name"] for x in reliability).issubset(all_names)
+    assert ablations.issubset(all_names)
