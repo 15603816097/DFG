@@ -8,6 +8,7 @@ GTSAM LM optimization under the same numeric stopping rule.
 
 - Fixed2: ISJ_CTRL_FIXED_SECOND_PASS
 - Dynamic: FINAL_S1_v5_gru, FINAL_S2_v6_all_mamba
+- Reliability-only: ABL_V5_GRU_RELIABILITY_ONLY / ABL_V6_MAMBA_RELIABILITY_ONLY
 - Constant/permuted uncertainty: all 8 ISJ_CTRL_* controls
 
 No KITTI Raw, Mamba installation or model retraining needed. Every continuation
@@ -53,7 +54,15 @@ def available_cases(family: str) -> list[dict]:
     ]
     if family == "core":
         return cases
-    if family not in ("controls", "all"):
+    reliability = [
+        {"name": "ABL_V5_GRU_RELIABILITY_ONLY",
+         "type": "reliability", "source": "v5"},
+        {"name": "ABL_V6_MAMBA_RELIABILITY_ONLY",
+         "type": "reliability", "source": "v6"},
+    ]
+    if family == "reliability":
+        return reliability
+    if family not in ("controls", "all", "ablations"):
         raise ValueError(f"Unknown family {family}")
     controls = []
     for model, source in (("GRU", "v5"), ("MAMBA", "v6")):
@@ -72,7 +81,11 @@ def available_cases(family: str) -> list[dict]:
                 "mode": "permuted",
                 "seed": seed,
             })
-    return controls if family == "controls" else cases + controls
+    if family == "controls":
+        return controls
+    if family == "ablations":
+        return reliability + controls
+    return cases + reliability + controls
 
 
 def same_graph(gtsam, seq: str, m, spec: dict):
@@ -82,6 +95,14 @@ def same_graph(gtsam, seq: str, m, spec: dict):
         return graph, counts
     if kind == "dynamic":
         return build_dynamic_graph(gtsam, seq, m, spec["source"]), None
+    if kind == "reliability":
+        original_confidence = s7.confidence
+        try:
+            s7.confidence = lambda uncertainty: 1.0
+            graph = build_dynamic_graph(gtsam, seq, m, spec["source"])
+        finally:
+            s7.confidence = original_confidence
+        return graph, None
 
     # Exactly matches the frozen transformations in run_controls.py. The
     # reliability time-series remains untouched. The patch is always undone.
@@ -235,7 +256,7 @@ def main():
     parser.add_argument("--sequence", default="all",
                         choices=("all",) + TEST_SEQUENCES)
     parser.add_argument("--family", default="core",
-                        choices=("core", "controls", "all"))
+                        choices=("core", "controls", "reliability", "ablations", "all"))
     parser.add_argument("--max-extra-passes", type=int, default=4)
     parser.add_argument("--objective-rtol", type=float, default=1e-7)
     parser.add_argument("--shift-tol", type=float, default=1e-3,
