@@ -470,3 +470,45 @@ Interpretation: difference to full Dynamic U for one dropout estimates the
 causal effect of the sensor itself, and effects need not add up. Since these
 comparisons were devised after seeing drive 0047, label them as exploratory.
 Do not tune sensor gating on the same test sequence and call it held-out.
+
+
+## Final 2^3 sensor-U factorial comparison (all completed)
+
+Only-GPS, Only-IMU, Only-Camera, Drop-GPS, Drop-IMU, Drop-Camera,
+Full-Dynamic and Reliability-Only now form the full 8-case U on/off
+design (all three sensors' reliability signals retained). Across
+three KITTI sequences and two frozen encoders there are 48 method
+instances, each audited using the same numeric convergence criterion.
+
+The complementary \`only\` results revealed:
+- drive 0034: Only GPS U is slightly more accurate than Full Dynamic U
+  for both encoders.
+- drive 0042: Full Dynamic U is more accurate than Only GPS U for both.
+- drive 0047: Only GPS U is worse than Reliability Only, consistent with
+  Drop GPS U improving full-model ATE.
+
+Generate publication-oriented **exact CSV summaries** from the prior
+result files, without training or re-running any FGO:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_sensor_u_factorial_summary.py -v
+python experiments/isj_supplement/summarize_sensor_u_factorial.py
+~~~
+
+Outputs:
+- \`results/cross_sequence/isj_sensor_u_factorial_summary.csv\`:
+  one row per sequence and encoder, all eight ATE3D values, conditional
+  GPS/IMU/Camera U effects (percent ATE gain) in other-U-off vs
+  other-U-on contexts, and convergence flags;
+- \`results/cross_sequence/isj_sensor_u_factorial_long.csv\`:
+  all 48 records with case identities, U-on/off masks and convergence flags.
+
+The summary will report a failed convergence status if encountered; do
+not hide it or declare optimality based solely on a numeric stopping
+criterion. Conditional on/off comparisons are **not additive sensor
+contributions**, since sensor weights interact through FGO. These
+post-hoc experiments must be followed by out-of-date / cross-date
+independent validation, and the GPS-linked OXTS reference remains a
+known evaluation limitation. Do not tune a new gating strategy using
+these same explored test sequences and label it blind held-out evidence.
