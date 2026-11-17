@@ -512,3 +512,45 @@ post-hoc experiments must be followed by out-of-date / cross-date
 independent validation, and the GPS-linked OXTS reference remains a
 known evaluation limitation. Do not tune a new gating strategy using
 these same explored test sequences and label it blind held-out evidence.
+
+
+## Cross-date KITTI Raw preflight (before modifying the evaluation pipeline)
+
+All 48 existing sensor-U factorial runs were summarized with
+\`summarize_sensor_u_factorial.py\`; six per-sequence/encoder summaries and
+48 detailed rows passed the predeclared convergence rule. To assess whether
+this evidence generalizes beyond 2011_10_03, FIRST inventory available
+cross-date data instead of modifying the 2011_10_03 test definitions:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_raw.py -v
+python experiments/isj_supplement/audit_cross_date_raw.py
+# Optional machine-readable inventory:
+python experiments/isj_supplement/audit_cross_date_raw.py \
+  --json-out results/cross_sequence/isj_cross_date_raw_inventory.json
+~~~
+
+This read-only preflight scans \`dataset/kitti/<date>/<date>_drive_<id>_sync/\`,
+checks \`oxts\`, \`velodyne_points\`, \`image_02\`, \`image_03\` frame files
+and timestamp counts, and the three date-specific calibration text files.
+A directory is only "READY_RAW" if the raw file layout is complete and
+its acquisition date differs from 2011_10_03. File readiness is not an
+actual validation run or proof of correct calibration/clock synchronization.
+
+IMPORTANT: The existing scripts \`stage7_config.py\`,
+\`build_sequence_data.py\`, \`infer_v5_gru.py\`, \`infer_v6_mamba.py\`,
+and \`run_stage7_two_stage.py\` restrict processing to exactly three drives
+from 2011_10_03. Do NOT simply change DATE_DIR or TEST_SEQUENCES in-place
+and risk overwriting historical result folders. Once genuine cross-date Raw
+data is present, implement a separate date-aware evaluation entry point,
+use date-specific calibration, keep frozen V5/V6 checkpoints and noise
+anchors, and run all comparison methods under the same solver stopping rule.
+
+The current processed KITTI experimental errors are judged against a
+GPS/OXTS-derived local trajectory while degraded GPS is part of the input,
+so the reference remains GPS-linked, not independent ground truth.
+Also, the original 0027 degradation plan is resampled on the test drives;
+clearly label all future results synthetic-degradation generalization and
+do not claim real-world sensor-failure validation unless independently
+measured sensor degradation is evaluated.
