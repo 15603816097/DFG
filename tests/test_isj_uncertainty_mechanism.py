@@ -12,7 +12,7 @@ def test_framewise_error_gain_positive_means_dynamic_better():
     gt = np.zeros((4, 3))
     full = np.array([[1., 0, 0], [2., 0, 0],
                      [3., 0, 0], [4., 0, 0]])
-    reliability = full + np.array([[1.], [0.], [-1.], [-2.]])
+    reliability = full + np.array([[1., 0, 0], [0., 0, 0], [-1., 0, 0], [-2., 0, 0]])
     curves = compare_error_curves(gt, full, reliability)
     np.testing.assert_allclose(
         curves["dynamic_gain_per_frame_m"], [1., 0., -1., -2.]
