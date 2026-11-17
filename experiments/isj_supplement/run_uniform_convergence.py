@@ -44,6 +44,9 @@ from experiments.isj_supplement.audit_dynamic_convergence import (
 )
 from experiments.isj_supplement.run_controls import transform_uncertainty
 from experiments.isj_supplement.adaptive_fg_common import build_factor_graph
+from experiments.isj_supplement.run_sensor_uncertainty_ablation import (
+    available_specs as sensor_u_specs, select_uncertainty,
+)
 
 DEFAULT_SEEDS = (11, 23, 47)
 
@@ -72,6 +75,9 @@ def available_cases(family: str) -> list[dict]:
     ]
     if family == "adaptive":
         return adaptive
+    if family in ("sensor_u_drop", "sensor_u_only", "sensor_u_all"):
+        strategy = family.removeprefix("sensor_u_")
+        return sensor_u_specs(strategy)
     if family not in ("controls", "all", "ablations"):
         raise ValueError(f"Unknown family {family}")
     controls = []
@@ -105,6 +111,20 @@ def same_graph(gtsam, seq: str, m, spec: dict):
         return graph, counts
     if kind == "dynamic":
         return build_dynamic_graph(gtsam, seq, m, spec["source"]), None
+    if kind == "sensor_u":
+        original_pred = s7.pred
+        active = frozenset(spec["active_uncertainty_sensors"])
+
+        def sensor_pred(sequence, source, sensor, n):
+            r, u = original_pred(sequence, source, sensor, n)
+            return r, select_uncertainty(sensor, u, active)
+
+        try:
+            s7.pred = sensor_pred
+            graph = build_dynamic_graph(gtsam, seq, m, spec["source"])
+        finally:
+            s7.pred = original_pred
+        return graph, None
     if kind == "adaptive":
         fixed_path = sequence_out(seq) / "factor_graph" / "FINAL_S0_fixed" / "poses.npy"
         fixed_poses = check_saved_pose(fixed_path, len(m.gps_local))
@@ -282,7 +302,7 @@ def main():
     parser.add_argument("--sequence", default="all",
                         choices=("all",) + TEST_SEQUENCES)
     parser.add_argument("--family", default="core",
-                        choices=("core", "controls", "reliability", "ablations", "adaptive", "all"))
+                        choices=("core", "controls", "reliability", "ablations", "adaptive", "sensor_u_drop", "sensor_u_only", "sensor_u_all", "all"))
     parser.add_argument("--max-extra-passes", type=int, default=4)
     parser.add_argument("--objective-rtol", type=float, default=1e-7)
     parser.add_argument("--shift-tol", type=float, default=1e-3,
