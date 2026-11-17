@@ -408,3 +408,65 @@ sensor factors. A correlation can be undefined if uncertainties are nearly
 constant. No reference trajectory is used to select factors or retune
 uncertainty: OXTS/GPS-derived ground truth is used for diagnostic evaluation
 only. These results remain post-hoc exploratory and limited to one KITTI date.
+
+
+## Targeted sensor-U intervention: why does drive 0047 degrade?
+
+The first three-sequence mechanism audit found:
+- On drive 0047, full Dynamic U is worse than Reliability Only (GRU:
+  1.9881 vs 1.7891 m; Mamba: 2.0274 vs 1.8496 m).
+- GRU camera uncertainty is negatively correlated with framewise gain
+  (rho about -0.456); GPS also has a negative association.
+- These associations cannot identify which sensor's uncertainty mapping
+  causes the observed difference because the graph couples time/sensors.
+
+To test **controlled noise mapping interventions**, without retraining or
+changing reliability predictions, we added the following:
+
+- \`DROP_CAMERA\`: only Camera uses u=0 (reliability-only mapping); GPS/IMU
+  retain original uncertainties. Likewise for \`DROP_GPS\`, \`DROP_IMU\`.
+- \`ONLY_CAMERA\`: Camera retains original uncertainty; GPS/IMU use u=0.
+  Likewise for \`ONLY_GPS\`, \`ONLY_IMU\`.
+- Setting u=0 covers all frames, including the 63-frame encoder warm-up,
+  consistent with the prior Reliability Only ablation.
+- All cases reuse FINAL_S0_fixed/poses.npy as their identical first-stage
+  warm-start; LiDAR noise remains fixed.
+
+First run the six leave-one-out controls on 0047, test, and then enforce
+the **same numeric continuation stopping rule** as the main methods:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_sensor_u_ablation.py -v
+python -u experiments/isj_supplement/run_sensor_uncertainty_ablation.py \
+  --sequence 2011_10_03_drive_0047_sync --strategy drop
+python -u experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence 2011_10_03_drive_0047_sync \
+  --family sensor_u_drop --max-extra-passes 4
+~~~
+
+If the above succeeds, explore the complementary \`only\` controls to
+study interactions, and repeat the intervention on all three sequences:
+
+~~~bash
+python -u experiments/isj_supplement/run_sensor_uncertainty_ablation.py \
+  --sequence all --strategy all
+python -u experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence all --family sensor_u_drop --max-extra-passes 4
+python -u experiments/isj_supplement/run_uniform_convergence.py \
+  --sequence all --family sensor_u_only --max-extra-passes 4
+~~~
+
+Raw outputs:
+\`factor_graph/ISJ_SENSU_*/poses.npy\`, \`metrics.json\`,
+\`isj_sensor_uncertainty_<strategy>_results.csv\`, and matching protocol JSON.
+Continued results:
+\`factor_graph/ISJ_CONVERGENCE_ISJ_SENSU_*/poses.npy\`, \`metrics.json\`,
+\`isj_convergence_sensor_u_drop_results.csv\`, and
+\`isj_convergence_sensor_u_only_results.csv\`.
+
+Interpretation: difference to full Dynamic U for one dropout estimates the
+**conditional effect of that intervention in the current graph**, not a
+causal effect of the sensor itself, and effects need not add up. Since these
+comparisons were devised after seeing drive 0047, label them as exploratory.
+Do not tune sensor gating on the same test sequence and call it held-out.
