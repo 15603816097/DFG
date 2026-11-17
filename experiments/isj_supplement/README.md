@@ -366,3 +366,45 @@ If the first-stage residual covariance inflation harms GPS-related ATE,
 investigate sensor-specific inflation fractions from the ORIGINAL
 ISJ_RESADAPT_*/metrics.json (sigma_statistics) rather than retuning based
 on these already-inspected test sequences.
+
+
+## Descriptive sensor-mechanism analysis (especially 0047)
+
+All six existing conventional residual-adaptive baseline cases passed uniform
+continuation with no additional changes. Their original, frozen sigma
+statistics showed:
+- 0034: 3.50% of GPS factors inflated; only ~0.02% of IMU and no camera.
+- 0042: 27.27% of GPS factors inflated; 10.13% of camera factors in the
+  GPS/IMU/camera scheme; no IMU factors inflated.
+- 0047: ~2.99% of GPS factors inflated, no IMU or camera factors inflated.
+  Hence the GPS-only and GPS/IMU/Camera variants have identical output.
+
+To investigate why Dynamic U improves 0034/0042 over Reliability Only but
+is worse than Reliability Only on 0047, run the read-only descriptor:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_uncertainty_mechanism.py -v
+python -u experiments/isj_supplement/diagnose_uncertainty_mechanism.py \
+  --sequence 2011_10_03_drive_0047_sync
+python -u experiments/isj_supplement/diagnose_uncertainty_mechanism.py \
+  --sequence all
+~~~
+
+This produces:
+- \`results/cross_sequence/isj_uncertainty_mechanism_summary.csv\` with
+  per-encoder/sensor correlations between evidence uncertainty and
+  per-frame **gain** (Reliability Only position-error norm minus Dynamic U
+  position-error norm), high/low uncertainty quartile ATE differences,
+  and how uncertainty moves factor noise sigmas relative to reliability-only.
+- \`results/cross_sequence/isj_uncertainty_frames_<drive>_<encoder>.csv\`
+  for frame-by-frame visualization, with model uncertainty/reliability,
+  noise sigma values, and both position-error magnitudes.
+
+IMPORTANT: Quantile ATE differences are descriptive within a selected
+sensor uncertainty quartile; they DO NOT attribute per-frame pose error
+causally to the selected sensor. The optimization couples timestamps and
+sensor factors. A correlation can be undefined if uncertainties are nearly
+constant. No reference trajectory is used to select factors or retune
+uncertainty: OXTS/GPS-derived ground truth is used for diagnostic evaluation
+only. These results remain post-hoc exploratory and limited to one KITTI date.
