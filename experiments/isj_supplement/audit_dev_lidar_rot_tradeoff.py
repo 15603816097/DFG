@@ -64,6 +64,84 @@ def angle_deg_lidar_camera(measurements):
     return angle,valid
 
 
+def sensor_only_quarter_profile(m, angle, valid, threshold, start, end):
+    """Describe existing physical factors on [start,end); no pose or GT input.
+
+    Quantile threshold from entire 0027 is descriptive only. A single
+    sensor-pair angular difference cannot identify which sensor is at
+    fault; do not use this as a deployed dynamic weight.
+    """
+    n=len(m.gps_local)
+    if not (0<=start<end<=n-1):
+        raise ValueError("Invalid quarter bounds")
+    a=np.asarray(angle,float)
+    v=np.asarray(valid,bool)
+    if a.shape!=(n-1,) or v.shape!=(n-1,):
+        raise ValueError("Sensor angle/mask dimension mismatch")
+    selected=np.arange(start,end,dtype=int)
+    common=selected[v[selected]]
+    if len(common)<10:
+        raise ValueError("Insufficient common physical odometry pairs")
+    L=np.asarray(m.lidar_between,float)
+    C=np.asarray(m.camera_between,float)
+    lq=np.asarray(m.lidar_quality,float)
+    cq=np.asarray(m.camera_quality,float)
+    signed=np.rad2deg(np.arctan2(
+        np.sin(
+            np.arctan2(L[common,1,0],L[common,0,0])
+            -np.arctan2(C[common,1,0],C[common,0,0])
+        ),
+        np.cos(
+            np.arctan2(L[common,1,0],L[common,0,0])
+            -np.arctan2(C[common,1,0],C[common,0,0])
+        ),
+    ))
+    vals=a[common]
+    return {
+        "valid_pair_fraction":float(len(common)/len(selected)),
+        "valid_pairs":int(len(common)),
+        "high_disagreement_fraction":float(np.mean(vals>=threshold)),
+        "angle_mean_deg":float(np.mean(vals)),
+        "angle_median_deg":float(np.median(vals)),
+        "angle_p95_deg":float(np.percentile(vals,95)),
+        "signed_relative_yaw_mean_deg":float(np.mean(signed)),
+        "lidar_quality_mean":float(np.mean(lq[common])),
+        "camera_quality_mean":float(np.mean(cq[common])),
+        "lidar_step_distance_mean_m":float(np.mean(np.linalg.norm(
+            L[common,:3,3],axis=1
+        ))),
+        "camera_step_distance_mean_m":float(np.mean(np.linalg.norm(
+            C[common,:3,3],axis=1
+        ))),
+    }
+
+
+def print_sensor_profiles(m,angle,valid,threshold,edges):
+    print("\nSENSOR-ONLY CHRONOLOGICAL QUARTER PROFILES")
+    print("No reference GT, saved FGO pose, or ATE is used to calculate "
+          "any profile below; Q75 cutoff is development-only DESCRIPTIVE.")
+    for i in range(len(edges)-1):
+        start,end=int(edges[i]),int(edges[i+1])
+        info=sensor_only_quarter_profile(
+            m,angle,valid,threshold,start,end,
+        )
+        print(
+            f"  Q{i+1} {start}..{end-1}: "
+            f"pairs={info['valid_pairs']} "
+            f"pair_valid={info['valid_pair_fraction']:.2%} "
+            f"high_angle_fraction={info['high_disagreement_fraction']:.2%} "
+            f"angle_mean={info['angle_mean_deg']:.5f}deg "
+            f"angle_p50={info['angle_median_deg']:.5f}deg "
+            f"angle_p95={info['angle_p95_deg']:.5f}deg "
+            f"signed_yaw_step_mean={info['signed_relative_yaw_mean_deg']:+.5f}deg "
+            f"lidar_q_mean={info['lidar_quality_mean']:.4f} "
+            f"camera_q_mean={info['camera_quality_mean']:.4f} "
+            f"lidar_step_mean={info['lidar_step_distance_mean_m']:.4f}m "
+            f"camera_step_mean={info['camera_step_distance_mean_m']:.4f}m",
+            flush=True,
+        )
+
+
 def position_metrics(poses,gt,indices):
     poses=np.asarray(poses,float)
     gt=np.asarray(gt,float)
@@ -179,6 +257,7 @@ def main():
     tabulate("ALL DEVELOPMENT FRAMES",poses,gt,base_idx,all_rpe)
 
     edges=np.linspace(WARMUP,N-END_MARGIN,5,dtype=int)
+    print_sensor_profiles(m,angle,valid_pair,threshold,edges)
     for i in range(4):
         start,end=int(edges[i]),int(edges[i+1])
         mask=np.arange(start,end,dtype=int)
