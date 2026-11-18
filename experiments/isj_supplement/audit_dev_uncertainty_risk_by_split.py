@@ -151,13 +151,19 @@ def main():
                     err = np.abs(r[start:end] - target[start:end])
                     us = u[start:end]
                     pear, spear, auc = test_risk_metrics(us, err)
+                    # Critical negative control: network uncertainty must
+                    # add information beyond the trivially derived 1-r risk.
+                    # The same within-split top-20%-error labels are reused.
+                    _, _, r_auc = test_risk_metrics(1.0-r[start:end], err)
                     print(
                         f"    {split:<5} n={len(err):4} "
                         f"rMAE={err.mean():.5f} "
                         f"U_mean={us.mean():.5f} "
                         f"Pearson(U,abs_err)={pear:+.4f} "
                         f"Spearman={spear:+.4f} "
-                        f"AUC(high_error)={auc:.4f}"
+                        f"AUC(U)={auc:.4f} "
+                        f"AUC(1-r)={r_auc:.4f} "
+                        f"deltaU_minus_r={auc-r_auc:+.4f}"
                     )
     print("\nDONE. Do not tune on 0016 or treat this as independent calibration proof.")
 
