@@ -1129,3 +1129,56 @@ This is a **methodological confound check**, not the new paper method,
 and 0016 is exploratory. Even if a learned reliability method beats
 this one-step residual approach, a conventional robust loss kernel or
 better-tuned adaptive estimator is still needed for broader claims.
+
+
+### L. Next fixed experiment: true Huber/Cauchy M-estimator GPS versus all sensors
+
+After the exploratory 0016 fixed2 and residual comparison, run frozen
+robust-kernel baselines that use the actual GTSAM
+\`noiseModel.Robust\` (not the residual-based sigma inflation above).
+Reuses the preexisting Stage-7 robust thresholds exactly:
+Huber \`k=1.345\`, Cauchy \`k=2.3849\`.
+Each is evaluated both with GPS-only M-estimation and with GPS/IMU/Camera
+M-estimation. LiDAR remains fixed Gaussian, preserving original graph
+topology and physical factor measurements.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest \
+    tests/test_isj_cross_date_robust_kernels.py \
+    tests/test_isj_cross_date_runner.py -v
+python -u experiments/isj_supplement/run_cross_date_robust_kernels.py \
+    --sequence 2011_09_30_drive_0016_sync \
+    --stage fgo --kernel both --scope both
+python -u experiments/isj_supplement/run_cross_date_robust_kernels.py \
+    --sequence 2011_09_30_drive_0016_sync \
+    --stage converge --kernel both --scope both \
+    --max-extra-passes 4
+~~~
+
+Outputs are isolated and not overwritten at:
+\`results/isj_cross_date/2011_09_30_drive_0016_sync/factor_graph/\`
+under \`ISJ_ROBUST_HUBER_GPS\`, \`ISJ_ROBUST_HUBER_ALL\`,
+\`ISJ_ROBUST_CAUCHY_GPS\`, \`ISJ_ROBUST_CAUCHY_ALL\` and separately
+\`ISJ_CONVERGENCE_<name>\`. Existing output files must agree with
+the frozen method specification or execution fails closed. Continuation
+uses 100 LM iterations per pass, objective relative tolerance 1e-7,
+and position RMSE shift <=1 mm, for up to four extra passes.
+
+CAUTION: GTSAM's generic M-estimator on the 6-D Pose3 GPS pseudo-prior
+acts on the factor's aggregate whitened residual; its rotation part is
+already weakened by 1e6 rotation sigma. IMU robustification similarly
+affects rotation residual predominantly given its weak translational
+noise term. This is not a GPS-only 3D positional custom factor.
+These are exploratory comparisons because 0016 has already been
+inspected repeatedly; they are not an untouched evaluation.
+
+The code was added through repository tooling, NOT numerically executed on
+the user's GTSAM server. Run the unit tests and check the log before using
+any numerical results in a manuscript. Do not tune robust cutoff values on
+0016 or claim they are universally optimal. Next, implement one evidence-
+guided calibration method on development data and test it prospectively on
+unseen KITTI drives. No additional neural-network retraining is needed
+unless the selected method actually requires it.
