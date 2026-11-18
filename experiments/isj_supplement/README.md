@@ -849,3 +849,35 @@ from this audit and then report 0016 as an untouched held-out test.
 After diagnostics, seek an unexamined cross-date drive and evaluate
 the frozen protocol prospectively, then develop any revised mapping on
 a development/validation split only.
+
+
+### H. Read-only IMU injected-error and factor-time-alignment audit
+
+The 0016 prediction-quality audit found unexpectedly high IMU reliability at
+medium synthetic severity (both frozen GRU and Mamba). Severity is not the
+factor reliability training label. Inspect the **actual applied synthetic**
+gyro and acceleration differences against original KITTI OXTS values before
+diagnosing a model failure:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_imu_injected_error.py \
+  tests/test_isj_cross_date_prediction_quality.py -v
+mkdir -p logs
+set +e
+set -o pipefail
+python -u experiments/isj_supplement/audit_cross_date_imu_injected_error.py \
+  --sequence 2011_09_30_drive_0016_sync \
+  2>&1 | tee logs/isj_cross_date_0930_imu_injected_error.log
+~~~
+
+The Stage-7 FGO's orientation between factor currently uses the degraded
+gyroscope at i, while the uncertainty/reliability covariance is read at
+i+1. The audit compares both predictor[t] vs injected gyro error[t] and
+predictor[i+1] vs injected gyro error[i], as well as acceleration error
+for context (acceleration is not directly used in this Stage-7 IMU factor).
+No output artifacts or model parameters are modified. Correlations are
+descriptive, not formal calibration; original OXTS is not an independent
+high-precision inertial reference.
