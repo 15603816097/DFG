@@ -647,3 +647,56 @@ and refuses to point its output root at the old
 \`results/cross_sequence\`. A new model's previously absent predictions
 may be added after another model's FGO, but existing predictions cannot
 be overwritten if FGO outputs already exist.
+
+
+### D. Cross-date temporal-information controls: mean U vs shuffled U
+
+Once BOTH frozen V5/GRU and V6/Mamba predictions and their FGO are
+available, use the separate cross-date control entrypoint:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_controls.py tests/test_isj_cross_date_runner.py -v
+mkdir -p logs
+set -o pipefail
+python -u experiments/isj_supplement/run_cross_date_controls.py \
+  --stage fgo --model both --controls all --seeds 11,23,47 \
+  2>&1 | tee logs/isj_cross_date_0930_controls_fgo.log
+
+# Only after FGO succeeds:
+python -u experiments/isj_supplement/run_cross_date_controls.py \
+  --stage converge --model both --controls all --seeds 11,23,47 \
+  --max-extra-passes 4 \
+  2>&1 | tee logs/isj_cross_date_0930_controls_convergence.log
+~~~
+
+This adds 8 NEW FGO cases (2 model-specific constant-mean U and
+6 model-specific sensor-wise temporally permuted U using predeclared seeds).
+For each, all original reliability values r[t] and uncertainty values at
+frames 0..62 remain unchanged. Mean or shuffle is applied to U[t] from
+frame 63 onward, preserving each sensor's marginal U distribution under
+shuffling and the GRU/Mamba frozen feature/normalization/checkpoints.
+All controls start from the same saved FINAL_S0_fixed trajectory; stage-2
+GTSAM LM has unchanged graph factors and covariance equations. Every run
+is checked under the same 1e-7 relative objective and 0.001 m trajectory
+shift stopping rule, with separate ISJ_CONVERGENCE_ directories. Existing
+fixed, GRU, Mamba, and their Reliability Only results are NEVER replaced.
+
+Controls are essential because Reliability Only forces confidence=1 at
+all timestamps, whereas full dynamic U uses confidence=1-U; specifically
+U=1 for the first 63 unpredicted frames sets dynamic-U confidence=0, and
+thus fixed sigma, while Reliability Only still applies a predictive sigma.
+GRU and Mamba also have DIFFERENT default warmup reliabilities (0.5 vs
+1.0). Therefore Dynamic U vs Reliability Only alone does NOT isolate
+the value of temporally varying U, nor does early/late segment ATE on
+the jointly optimized trajectory establish causal effects.
+
+The control script preserves the full-dynamic warmup and reliability
+sequences for its temporal-information comparison. The controls are
+exploratory post-hoc, not blinded held-out evaluation; mean-U does not
+preserve the empirical distribution shape, and permuted U destroys
+ordering rather than all possible correlations. If results merit a
+revised method, evaluate that revised method on a NEW untouched drive.
+The OXTS/GPS metric reference is correlated with the GPS input.
