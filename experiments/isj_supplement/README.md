@@ -1900,3 +1900,71 @@ and feedback false positives before designing FGO. If not,
 investigate state-update/gain behavior and alternative sources
 of absolute reference drift; do not arbitrarily tune thresholds.
 Preserve all previous E1 and FGO outputs.
+
+
+### X. E1 motion-source ablation outcome and SO3 reference-convention audit
+
+User ran E1 source-policy read-only 0027 experiment successfully:
+10/10 pytest pass; 4479 same matched frames, 19.469% injected
+GPS error >=5m against original OXTS/GPS. Mean pre-update GPS
+innovation / synthetic fault AUROC:
+
+| motion prior | mean innovation | AUROC |
+|---|---:|---:|
+| LiDAR translation + LiDAR rotation | 62.0695 m | .6006 |
+| Camera translation + Camera rotation | 8.2412 m | .7949 |
+| LiDAR translation + Camera rotation | 7.9420 m | .7928 |
+| original 5-step LiDAR/GPS norm-only measurement mismatch | n/a | **.8732** |
+
+At development-normal p95 threshold (~5% observed FPR),
+legacy norm-only TPR was **.5103** versus Camera **.0768**
+and Hybrid **.0780**. Thus replacing LiDAR rotation fixes much
+of the global-prior drift but the E1 fault detector is NOT
+competitive with the old raw discrepancy and should **not** be
+turned into a proposed covariance gate.
+
+Even hybrid global GPS innovation rises in chronological Q1..Q4:
+**1.489, 3.736, 7.322, 19.216 m**. Important causal drift and
+GPS state-update issues remain. Existing fixed FGO uses tight
+LiDAR rotation sigma **0.012857** versus camera sigma **0.04**
+so whether that harms full FGO is plausible but UNPROVEN;
+running FGO immediately is premature.
+
+Next **read-only** diagnostic:
+\`audit_dev_lidar_rotation_reference.py\`. Uses ORIGINAL 0027
+KITTI OXTS [roll,pitch,yaw] only as post-hoc pose-increment
+REFERENCE; these INS/GNSS-derived attitudes are not independent
+high-precision truth and do NOT enter any method. For both
+frozen Stage-6 physical LiDAR and Camera body-frame between
+rotations, compare common-valid per-pair SO(3) geodesic residual
+and signed yaw-increment residual. Report Q1..Q4 signed bias
+and the error if the factor is inverted (to check
+conversion convention), and LiDAR-vs-Camera relative rotation
+disagreement. This helps distinguish:
+1) systematic small yaw bias accumulating ~54deg in LiDAR,
+2) rotation sign / inverse convention bug,
+3) disagreements with reference due to IMU/body extrinsics
+or OXTS timing. It is a diagnosis, not a demonstrated sensor
+failure or ISJ method.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_lidar_rotation_reference.py -v
+echo "ROTATION_TEST_EXIT=$?"
+# Only if all tests pass:
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_lidar_rotation_reference.py \
+ > logs/isj_dev_lidar_rotation_reference.log 2>&1
+echo "ROTATION_AUDIT_EXIT=$?"
+cat logs/isj_dev_lidar_rotation_reference.log
+~~~
+
+Untouched 0020 stays for future prospective external test. 0016
+is exploratory and may not be called a clean test. Do not use
+post-hoc OXTS references to make model gating decisions, and
+do not claim FGO gains without a fair convergence-controlled FGO.
