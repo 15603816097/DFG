@@ -755,3 +755,53 @@ this pilot, that supports sensitivity to original temporal assignment
 beyond the **invalid Beta-combinations** confound, conditional on
 perturbation strength. It still does not isolate causation or establish
 calibration, robust generalization, or independent position truth.
+
+
+### F. Matched first-63-frame Reliability Only control
+
+The original Dynamic-U case uses U=1 (confidence=0; fixed factor sigma)
+for the first 63 frames (zero-based t<63) before a complete encoder window.
+The original Reliability Only case forces confidence=1 even there. This is
+an important non-U-temporal confound, particularly in V5/GRU IMU weights.
+
+The following *new* control matches Dynamic U's weights during warmup;
+after the encoder window becomes valid (t>=63), it uses Reliability Only
+weights. It keeps frozen r[t], sensor measurements, LiDAR, all other
+factor/noise code, the fixed-FGO start and LM convergence rule unchanged.
+
+The control supplies U_eff=1 for t<63 and U_eff=0 for t>=63 solely as a
+**covariance control switch**, not a Beta uncertainty prediction.
+The existing original predictions and cases are never modified.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set -o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_warmup_matched.py \
+  tests/test_isj_cross_date_runner.py -v
+
+python -u experiments/isj_supplement/run_cross_date_warmup_matched.py \
+  --stage audit --model both
+
+mkdir -p logs
+python -u experiments/isj_supplement/run_cross_date_warmup_matched.py \
+  --stage fgo --model both \
+  2>&1 | tee logs/isj_cross_date_0930_warmup_matched_fgo.log
+# Require FGO exit 0 before convergence:
+python -u experiments/isj_supplement/run_cross_date_warmup_matched.py \
+  --stage converge --model both --max-extra-passes 4 \
+  2>&1 | tee logs/isj_cross_date_0930_warmup_matched_convergence.log
+~~~
+
+Adds only these two new names:
+- ISJ_CTRL_GRU_WARMUP_MATCHED_REL_ONLY
+- ISJ_CTRL_MAMBA_WARMUP_MATCHED_REL_ONLY
+
+Each saved convergence case starts from its own saved 2nd-stage output,
+under the same numerical LM tolerance; the original FGO trajectory and
+Dynamic-U FGO solutions are untouched. Both methods' warmup factor
+weights now match within a model. This is an exploratory post-hoc pilot
+on one OXTS/GPS-linked synthetic-degradation drive, not independent GT
+or prospective validation.
