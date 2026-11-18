@@ -80,7 +80,10 @@ def rank_auc(scores, positive):
 
 def split_ranges(model: str, n: int):
     if model == "GRU_V5":
-        cut1, cut2, usable_end = int(.70*n), int(.85*n), n
+        # V5 split cutoffs use original n, but build_targets creates an
+        # NaN second-future label in the final HORIZON-1 frames; its
+        # `valid` index mask excludes these final placeholder frames.
+        cut1, cut2, usable_end = int(.70*n), int(.85*n), n-HORIZON+1
     elif model == "MAMBA_V6":
         usable_end = n - HORIZON + 1
         cut1, cut2 = int(.70*usable_end), int(.85*usable_end)
