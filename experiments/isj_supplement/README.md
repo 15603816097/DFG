@@ -554,3 +554,96 @@ Also, the original 0027 degradation plan is resampled on the test drives;
 clearly label all future results synthetic-degradation generalization and
 do not claim real-world sensor-failure validation unless independently
 measured sensor degradation is evaluated.
+
+
+## Cross-date 2011-09-30 / 0016: isolated frozen-model pilot
+
+The synchronized KITTI Raw drive
+\`dataset/kitti/2011_09_30/2011_09_30_drive_0016_sync\` is now present
+on the user's server: 279 frames each for OXTS, Velodyne, image_02 and
+image_03, with matching timestamp counts and the date-specific calibration
+files. The raw inventory found \`READY_RAW\`; this proves only file layout,
+not quality or synchronization accuracy.
+
+Use **one new entrypoint**; never run the old Stage-7 shell scripts on a
+different acquisition date. The historical \`stage7_config.py\` remains
+unchanged. New outputs are isolated under
+\`results/isj_cross_date/2011_09_30_drive_0016_sync/\`.
+
+The pipeline reuses the frozen original 0027 degradation recipe,
+odometry computation, feature extraction, checkpoints/normalizers,
+Stage-7 factor and covariance equations, and LM optimizer.
+No model training, date-specific noise retuning or GT-based trajectory
+initialization. The evaluation reference is OXTS/GPS-derived and not
+independent of the GPS used as an input. This drive is an initial
+cross-date **pipeline pilot**, not sufficient evidence of generalization
+or naturally occurring sensor failure performance.
+
+### A. Validate and preprocess the KITTI Raw sequence
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_runner.py tests/test_isj_cross_date_raw.py -v
+python experiments/isj_supplement/run_cross_date.py --stage inspect
+mkdir -p logs
+set -o pipefail
+python -u experiments/isj_supplement/run_cross_date.py --stage preprocess \
+  2>&1 | tee logs/isj_cross_date_0930_preprocess.log
+~~~
+
+Preprocessing recomputes physical LiDAR and degraded stereo visual
+odometry for 279 frames. It can consume substantial CPU/time; cached
+processed results are reused when valid, and missing/partial data fail
+rather than being silently ignored. It preserves the frozen normalized
+development degradation schedule.
+
+### B. Run the frozen V5 GRU and, when possible, the V6 Mamba
+
+~~~bash
+python -u experiments/isj_supplement/run_cross_date.py --stage gru \
+  2>&1 | tee logs/isj_cross_date_0930_gru.log
+python -u experiments/isj_supplement/run_cross_date.py --stage mamba \
+  2>&1 | tee logs/isj_cross_date_0930_mamba.log
+~~~
+
+Mamba requires the official \`mamba_ssm\` implementation and its matching
+frozen checkpoint/runtime; if unavailable on the current machine, do
+GRU first, then run Mamba later in its existing supported environment.
+Do not substitute another Mamba implementation/architecture to manufacture
+a test result. The commands do NOT retrain either model.
+
+### C. Run the identical Stage-7 FGO using one common fixed warm start
+
+For GRU only:
+
+~~~bash
+python -u experiments/isj_supplement/run_cross_date.py \
+  --stage fgo --model gru \
+  2>&1 | tee logs/isj_cross_date_0930_gru_fgo.log
+python -u experiments/isj_supplement/run_cross_date.py \
+  --stage converge --model gru --max-extra-passes 4 \
+  2>&1 | tee logs/isj_cross_date_0930_gru_convergence.log
+~~~
+
+After Mamba predictions are available, run \`--model mamba\` for
+\`fgo\` and \`converge\`, or \`--model both\` for full combined reporting.
+\`FINAL_S0_fixed\` is reused from cache, never overwritten.
+For each model, the full Dynamic U and Reliability Only graph use
+exactly the same fixed-FGO warm start. Same unchanged reliability
+predictions, fixed covariance anchors, fixed LiDAR noise and same
+separate uniform LM stopping rule as previous three sequences.
+
+The convergence controller saves all continued poses into separate
+\`ISJ_CONVERGENCE_*\` subfolders, and reports
+\`STABLE\`/\`NOT_STABLE\` explicitly. All original Stage-7 outputs stay
+untouched. This first-phase pilot covers fixed FGO, GRU, Mamba and
+Reliability Only; constant/shuffled-U controls may be added subsequently,
+without altering pretrained weights or hyperparameters.
+
+Safety: new runner refuses to process 2011_10_03 as a cross-date drive
+and refuses to point its output root at the old
+\`results/cross_sequence\`. A new model's previously absent predictions
+may be added after another model's FGO, but existing predictions cannot
+be overwritten if FGO outputs already exist.
