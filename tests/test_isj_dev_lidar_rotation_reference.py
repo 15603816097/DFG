@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
 from experiments.isj_supplement.audit_dev_lidar_rotation_reference import (
     rpy_to_matrix,reference_imu_rotation_pairs,relative_rotation_angle_rad,
     relative_yaw_increments,signed_yaw_difference,report,
+    resolve_sequence_dir,main,
 )
 
 
@@ -64,3 +66,44 @@ def test_report_matched_pairs_and_partial_validity():
     assert np.mean(yaw)==pytest.approx(np.degrees(.001),abs=1e-12)
     with pytest.raises(ValueError,match="too few|Too few"):
         report("LiDAR",l,gt,np.zeros(n-1,bool),n)
+
+
+
+def test_resolve_raw_sequence_strictly_requires_0027(tmp_path):
+    wrong=tmp_path/"2011_09_30_drive_0020_sync"
+    wrong.mkdir()
+    with pytest.raises(ValueError,match="exact drive"):
+        resolve_sequence_dir(wrong)
+    seq=tmp_path/"2011_10_03_drive_0027_sync"
+    seq.mkdir()
+    with pytest.raises(FileNotFoundError,match="0027 original OXTS"):
+        resolve_sequence_dir(seq)
+    (seq/"oxts"/"data").mkdir(parents=True)
+    assert resolve_sequence_dir(seq)==seq
+
+
+def test_auto_mode_falls_back_to_relative_camera_comparison_without_raw_oxts(
+    tmp_path,monkeypatch,capsys
+):
+    from experiments.isj_supplement import audit_dev_lidar_rotation_reference as script
+    n=4544
+    identity=np.repeat(np.eye(4)[None,:,:],n-1,axis=0)
+    fake=SimpleNamespace(
+        gps_local=np.zeros((n,3)),
+        lidar_between=identity,
+        camera_between=identity,
+        lidar_valid=np.ones(n-1,bool),
+        camera_valid=np.ones(n-1,bool),
+        lidar_quality=np.ones(n-1),
+        camera_quality=np.ones(n-1),
+    )
+    monkeypatch.setattr(script.s6,"load_measurements",lambda: fake)
+    seq=tmp_path/"2011_10_03_drive_0027_sync"
+    main(["--sequence-dir",str(seq),"--reference","auto"])
+    printed=capsys.readouterr().out
+    assert "OXTS RAW NOT FOUND" in printed
+    assert "CAMERA RELATIVE COMPARISON ONLY" in printed
+    assert "LIDAR_CAMERA" in printed
+    assert "LiDAR versus Camera" in printed
+    with pytest.raises(FileNotFoundError,match="0027 original OXTS"):
+        main(["--sequence-dir",str(seq),"--reference","oxts"])
