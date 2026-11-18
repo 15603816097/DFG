@@ -1182,3 +1182,57 @@ any numerical results in a manuscript. Do not tune robust cutoff values on
 guided calibration method on development data and test it prospectively on
 unseen KITTI drives. No additional neural-network retraining is needed
 unless the selected method actually requires it.
+
+
+### M. Post-robust-baseline decision: build only ONE calibration innovation
+
+On the repeatedly inspected \`2011_09_30_drive_0016_sync\`, frozen robust
+GPS Huber/Cauchy and GPS/IMU/Camera Huber/Cauchy baselines have now been
+completed on the server (unit tests 10/10 passed). Their converged ATE3D:
+Huber GPS 2.768891m; Huber All 2.778402m; Cauchy GPS 2.780994m;
+Cauchy All 2.784688m. Traditional residual-adaptive is 2.779791m,
+fixed-second-pass continuation is 2.811071m. The GRU/Mamba
+reliability-only numbers 1.608051m/1.695980m are from earlier
+warmup-matched exploratory runs and must be checked against their
+saved convergence protocols in a final table. These are NOT unseen
+validation data and must not be used to select hyperparameters.
+
+A deliberately small, **not yet experimentally validated**
+\`src/reliability/evidence_feedback_calibration.py\` research prototype
+implements a soft-count Beta-evidence feedback update of the frozen
+reliability mean. It does NOT assume that Beta vacuity U is calibrated
+measurement variance. The feedback score MUST come from a defensible,
+pre-update measurement-consistency measurement. The unit tests verify
+Beta count algebra, valid evidence range, missing feedback and first
+63-frame warmup exclusion; numerical tests do not prove localization
+benefit, independent residual validity or causal deployability.
+
+Before writing any Stage-7 FGO integration or tuning on KITTI 0016,
+check **development 0027** artifact availability WITHOUT changing
+the original files:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_evidence_feedback_calibration.py \
+    tests/test_isj_cross_date_robust_kernels.py -v
+python -u experiments/isj_supplement/audit_dev_calibration_readiness.py
+~~~
+
+The development audit lists V3 labels, old 0027 sensor measurements and
+factor files, existing frozen V5/V6 checkpoints and predicted arrays.
+Do not confuse V3 label consistency with the actual V6 checkpoint
+training data lineage: V6 checkpoint creation source does not save the
+\`--data\` path, so the original training invocation/log must be found
+before asserting comparable provenance.
+
+The V3 future target corresponds to t+3 but V5/V6 datasets use it
+as the first future target. In a FAST paper plan based only on current
+\`r_t\` heads, do **not** claim validated future prediction or preemptive
+trajectory weighting. Make current-reliability calibration the sole
+candidate innovation. Next engineering milestone is independent
+cross-sensor residual construction and development-only factor-graph
+integration, with reliability-only and feedback-only controls. Never
+use test GT to calculate weights. No new 0016 tuning; prospectively
+select multiple new KITTI sequences for independent validation.
