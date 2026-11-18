@@ -1082,3 +1082,50 @@ multiple newly obtained KITTI drives under a prospectively frozen protocol.
 All methods need consistent graph topology, initialization, optimization
 stopping/convergence checks, and synthetic-fault seeds. Explain that
 GPS/OXTS reference and corrupted GPS input share their source.
+
+
+### K. Before crediting residual-adaptive improvement: add a SAME fixed second pass
+
+On exploratory cross-date drive \`2011_09_30_drive_0016_sync\`, the frozen
+one-step residual-adaptive GPS-only and GPS/IMU/Camera variants both
+obtained ATE3D **2.779791 m**, from a first-stage Fixed FGO result of
+**2.811762 m**, with identical final objective **569.411554826**.
+**Do not attribute the 0.032 m improvement to residual reweighting
+before comparing against an unchanged FIXED noise graph from the same
+first-stage warm start.** It may simply be an extra LM solve.
+The tiny difference from the separately reported earlier fixed result
+2.811416 m reflects a different saved stage/continuation; do not silently
+mix them.
+
+Run the isolated fixed second pass and inspect sigma inflation fractions:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_fixed_second_pass.py \
+  tests/test_isj_cross_date_residual_baseline.py -v
+python -u experiments/isj_supplement/run_cross_date_fixed_second_pass.py \
+  --sequence 2011_09_30_drive_0016_sync --stage audit
+python -u experiments/isj_supplement/run_cross_date_fixed_second_pass.py \
+  --sequence 2011_09_30_drive_0016_sync --stage fgo
+python -u experiments/isj_supplement/run_cross_date_fixed_second_pass.py \
+  --sequence 2011_09_30_drive_0016_sync --stage converge \
+  --max-extra-passes 4
+python -u experiments/isj_supplement/run_cross_date_fixed_second_pass.py \
+  --sequence 2011_09_30_drive_0016_sync --stage compare
+~~~
+
+The script prints per-sensor fraction of factors that actually had
+sigma inflated, mean/max sigma multipliers from the existing
+residual baselines, and a matched unchanged fixed-noise second
+optimization from the exact same first-stage Fixed FGO poses. It
+reports raw and separately convergence-continued ATEs. Outputs
+are isolated in the new \`ISJ_CTRL_CROSSDATE_FIXED_SECOND_PASS\`
+and \`ISJ_CONVERGENCE_ISJ_CTRL_CROSSDATE_FIXED_SECOND_PASS\`
+directories. Cached results are reused only after provenance validation.
+
+This is a **methodological confound check**, not the new paper method,
+and 0016 is exploratory. Even if a learned reliability method beats
+this one-step residual approach, a conventional robust loss kernel or
+better-tuned adaptive estimator is still needed for broader claims.
