@@ -142,6 +142,108 @@ def print_sensor_profiles(m,angle,valid,threshold,edges):
         )
 
 
+def gyro_relative_rotations(m):
+    """Build physical one-step SO(3) from DEGRADED IMU gyro and true dt.
+
+    Same pair convention as Stage-6 _imu_between_pose: Exp(gyro[t]*dt).
+    Excludes invalid dt instead of replacing it with a guessed 0.1s.
+    This is NOT original OXTS attitude ground truth. No clean
+    reference or optimized FGO poses enter this construction.
+    """
+    n=len(m.gps_local)
+    gyro=np.asarray(m.imu_gyro,float)
+    ts=np.asarray(m.timestamps,float)
+    if gyro.shape!=(n,3) or ts.shape!=(n,):
+        raise ValueError("IMU gyro/timestamp shape mismatch")
+    dt=np.diff(ts)
+    valid=(np.isfinite(dt)&(dt>0)&(dt<=1)
+           &np.isfinite(gyro[:-1]).all(axis=1))
+    w=gyro[:-1]*dt[:,None]
+    w[~valid]=0.
+    theta=np.linalg.norm(w,axis=1)
+    A=np.ones(n-1)
+    B=np.full(n-1,.5)
+    large=theta>=1e-5
+    A[large]=np.sin(theta[large])/theta[large]
+    B[large]=(1-np.cos(theta[large]))/(theta[large]**2)
+    th2=theta[~large]**2
+    A[~large]=1-th2/6+th2**2/120
+    B[~large]=.5-th2/24+th2**2/720
+    K=np.zeros((n-1,3,3))
+    K[:,0,1]=-w[:,2]
+    K[:,1,0]=w[:,2]
+    K[:,0,2]=w[:,1]
+    K[:,2,0]=-w[:,1]
+    K[:,1,2]=-w[:,0]
+    K[:,2,1]=w[:,0]
+    R=(np.eye(3)[None]+A[:,None,None]*K
+       +B[:,None,None]*(K@K))
+    return R,valid
+
+
+def rotation_residual_metrics(measured,imu,mask):
+    """Same matched physical pair mask for LiDAR and Camera."""
+    measured=np.asarray(measured,float)
+    imu=np.asarray(imu,float)
+    mask=np.asarray(mask,bool)
+    if (measured.shape!=imu.shape or measured.ndim!=3
+        or measured.shape[1:]!=(3,3) or mask.shape!=(len(imu),)):
+        raise ValueError("Rotation residual/mask dimensions mismatch")
+    if mask.sum()<10:
+        raise ValueError("Too few valid IMU rotation pairs")
+    r=measured[mask]
+    b=imu[mask]
+    delta=np.matmul(np.swapaxes(r,1,2),b)
+    c=np.clip((np.trace(delta,axis1=1,axis2=2)-1)*.5,-1.,1.)
+    angle=np.rad2deg(np.arccos(c))
+    yaw=np.arctan2(r[:,1,0],r[:,0,0])
+    yaw_i=np.arctan2(b[:,1,0],b[:,0,0])
+    signed=np.rad2deg(np.arctan2(np.sin(yaw-yaw_i),np.cos(yaw-yaw_i)))
+    return {
+        "n":int(mask.sum()),
+        "so3_mean_deg":float(np.mean(angle)),
+        "so3_median_deg":float(np.median(angle)),
+        "so3_p95_deg":float(np.percentile(angle,95)),
+        "signed_yaw_mean_deg":float(np.mean(signed)),
+        "signed_yaw_median_deg":float(np.median(signed)),
+    }
+
+
+def print_imu_crosscheck(m,valid_pair,edges):
+    """Descriptive third-sensor check, NOT independent truth or a gate."""
+    IR,iv=gyro_relative_rotations(m)
+    lidar=np.asarray(m.lidar_between,float)[:,:3,:3]
+    camera=np.asarray(m.camera_between,float)[:,:3,:3]
+    mask=np.asarray(valid_pair,bool)&iv
+    if mask.sum()<100:
+        raise ValueError("Insufficient common IMU/LiDAR/Camera pairs")
+    print("\nDEGRADED-IMU THIRD-SENSOR ROTATION CROSSCHECK")
+    print("IMU uses gyro[t]*actual_dt; NO original OXTS attitude or "
+          "future positions. IMU is a noisy input, NOT ground truth.")
+    for i in range(len(edges)-1):
+        start,end=int(edges[i]),int(edges[i+1])
+        local=mask.copy()
+        local[:start]=False
+        local[end:]=False
+        if local.sum()<10:
+            print(f"  Q{i+1}: insufficient triple-valid samples")
+            continue
+        L=rotation_residual_metrics(lidar,IR,local)
+        C=rotation_residual_metrics(camera,IR,local)
+        print(
+            f"  Q{i+1}: n={L['n']} "
+            f"L_imu_SO3_mean={L['so3_mean_deg']:.5f}deg "
+            f"C_imu_SO3_mean={C['so3_mean_deg']:.5f}deg "
+            f"L_imu_yaw_signed_mean={L['signed_yaw_mean_deg']:+.5f}deg "
+            f"C_imu_yaw_signed_mean={C['signed_yaw_mean_deg']:+.5f}deg "
+            f"L_imu_SO3_p95={L['so3_p95_deg']:.5f}deg "
+            f"C_imu_SO3_p95={C['so3_p95_deg']:.5f}deg",
+            flush=True,
+        )
+    print("A third noisy sensor cannot by itself prove which between "
+          "rotation is correct; do not tune a sigma from these results.")
+
+
 def position_metrics(poses,gt,indices):
     poses=np.asarray(poses,float)
     gt=np.asarray(gt,float)
@@ -258,6 +360,7 @@ def main():
 
     edges=np.linspace(WARMUP,N-END_MARGIN,5,dtype=int)
     print_sensor_profiles(m,angle,valid_pair,threshold,edges)
+    print_imu_crosscheck(m,valid_pair,edges)
     for i in range(4):
         start,end=int(edges[i]),int(edges[i+1])
         mask=np.arange(start,end,dtype=int)
