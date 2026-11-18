@@ -30,6 +30,8 @@ def _test_measurements(n):
         camera_valid=np.ones(n-1,bool),
         lidar_quality=np.ones(n-1),
         camera_quality=np.ones(n-1),
+        imu_gyro=np.zeros((n,3)),
+        timestamps=np.arange(n,dtype=float)*.1,
     )
 
 
@@ -106,6 +108,8 @@ def test_diagnostic_does_not_run_fgo_or_write_files(tmp_path,monkeypatch,capsys)
     assert "Q4" in output
     assert "SENSOR-ONLY CHRONOLOGICAL QUARTER PROFILES" in output
     assert "high_angle_fraction=" in output
+    assert "DEGRADED-IMU THIRD-SENSOR ROTATION CROSSCHECK" in output
+    assert "L_imu_SO3_mean=" in output
 
 
 def test_missing_or_not_stationary_case_is_rejected(tmp_path,monkeypatch):
@@ -135,3 +139,41 @@ def test_sensor_only_profile_contains_no_ground_truth_and_uses_pair_mask():
         script.sensor_only_quarter_profile(
             m,angle,valid,threshold,-1,100
         )
+
+
+
+def test_imu_gyro_expmap_respects_stage6_sign_and_true_dt():
+    n=50
+    m=_test_measurements(n)
+    m.imu_gyro[:,2]=.1   # rad/s around positive body Z
+    R,valid=script.gyro_relative_rotations(m)
+    assert valid.all()
+    assert R.shape==(n-1,3,3)
+    expected=.1*.1
+    assert np.arctan2(R[0,1,0],R[0,0,0])==pytest.approx(expected)
+    assert np.allclose(R[:,2,2],1.,atol=1e-12)
+    assert np.allclose(
+        np.einsum("tji,tjk->tik",R,R),np.eye(3)[None],
+        atol=1e-12
+    )
+    # Same period and sample, now delayed/invalid: must NOT quietly
+    # assume dt=.1 or score it as a valid rotation.
+    m.timestamps[17]=m.timestamps[16]
+    Rbad,mask=script.gyro_relative_rotations(m)
+    assert not mask[16]
+    assert np.allclose(Rbad[16],np.eye(3))
+
+
+def test_triple_rotation_reference_is_noisy_not_oracle():
+    n=70
+    m=_test_measurements(n)
+    IR,valid=script.gyro_relative_rotations(m)
+    L=np.asarray(m.lidar_between)[:,:3,:3]
+    C=np.asarray(m.camera_between)[:,:3,:3]
+    r=script.rotation_residual_metrics(L,IR,valid)
+    c=script.rotation_residual_metrics(C,IR,valid)
+    assert r["so3_mean_deg"]==pytest.approx(0.,abs=1e-5)
+    assert c["so3_mean_deg"]>r["so3_mean_deg"]
+    assert r["signed_yaw_mean_deg"]==pytest.approx(0.)
+    with pytest.raises(ValueError,match="Too few"):
+        script.rotation_residual_metrics(L,IR,np.zeros(len(IR),bool))
