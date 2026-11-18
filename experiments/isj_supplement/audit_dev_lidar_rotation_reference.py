@@ -168,15 +168,34 @@ def main(argv=None):
             "Does not open 0016/0020."
         ),
     )
+    parser.add_argument(
+        "--reference",choices=("auto","oxts","camera"),default="auto",
+        help=(
+            "auto: compare to original 0027 OXTS if present, otherwise "
+            "report ONLY relative LiDAR/Camera rotation disagreement; "
+            "oxts: require original 0027 OXTS; camera: compare the two "
+            "physical factors only without any original OXTS access."
+        ),
+    )
     args=parser.parse_args(argv)
-    # Check the original OXTS BEFORE processing results, so missing raw
-    # files get a useful location message, not a vague frame-count error.
-    sequence_dir=resolve_sequence_dir(args.sequence_dir)
     m=s6.load_measurements()
     n=len(m.gps_local)
     if n!=4544:
         raise ValueError(f"Unexpected 0027 frame count {n}")
-    gt=reference_imu_rotation_pairs(sequence_dir,n)
+    sequence_dir=None
+    gt=None
+    if args.reference!="camera":
+        try:
+            sequence_dir=resolve_sequence_dir(args.sequence_dir)
+        except FileNotFoundError as exc:
+            if args.reference=="oxts":
+                raise
+            print("OXTS RAW NOT FOUND; using read-only CAMERA COMPARISON ONLY")
+            print(f"  missing={args.sequence_dir / 'oxts' / 'data'}")
+            print("  WARNING: Cannot identify which sensor is correct "
+                  "without an appropriate reference.")
+        else:
+            gt=reference_imu_rotation_pairs(sequence_dir,n)
     L=np.asarray(m.lidar_between,float)[:n-1,:3,:3]
     C=np.asarray(m.camera_between,float)[:n-1,:3,:3]
     lv=np.asarray(m.lidar_valid,bool)[:n-1] & (
@@ -188,17 +207,28 @@ def main(argv=None):
     common=lv & cv
 
     print("="*104)
-    print("0027 READ-ONLY OXTS/INS ROTATION INCREMENT CHECK")
-    print("Original OXTS orientation is REFERENCE ONLY, not independent absolute GT")
+    print("0027 READ-ONLY ROTATION INCREMENT CHECK")
     print("Stage-6 physical LiDAR/Camera between factors in calibrated IMU/body frame")
-    print(f"reference={sequence_dir}/oxts/data; frames={n}")
-    print("SO(3) error and signed local yaw angle; inverse test is diagnostic only")
-    print("Compare the SAME common valid timestamp pairs for both sensors")
-    print("No weights, no FGO, no training, no 0016/0020, no file writes")
+    if gt is None:
+        print("REFERENCE MODE: CAMERA RELATIVE COMPARISON ONLY (NO OXTS)")
+        print("Camera is NOT ground truth. This CANNOT identify which sensor is erroneous.")
+    else:
+        print("REFERENCE MODE: ORIGINAL 0027 OXTS INS ATTITUDE, POST-HOC ONLY")
+        print("Original OXTS reference is not independent absolute ground truth")
+        print(f"reference={sequence_dir}/oxts/data; frames={n}")
+    print("Same valid timestamp-pair mask for both sensors; 0016/0020 untouched")
+    print("No weights, FGO, training, sensor data modifications or output files written")
     print("="*104)
 
-    lerr,linv,ly=report("LiDAR",L,gt,common,n)
-    cerr,cinv,cy=report("Camera",C,gt,common,n)
+    if gt is not None:
+        lerr,linv,_=report("LiDAR",L,gt,common,n)
+        cerr,cinv,_=report("Camera",C,gt,common,n)
+    else:
+        lerr=linv=cerr=cinv=None
+
+    # Valid even when the original 0027 raw drive is archived elsewhere.
+    # Relative pair disagreement alone is NOT a measurement of truth.
+    report("LIDAR_CAMERA",L,C,common,n)
     difference=np.degrees(relative_rotation_angle_rad(L,C))
     pool=common.copy()
     pool[:WARMUP]=False
@@ -209,16 +239,17 @@ def main(argv=None):
           f"p95={np.percentile(difference[pool],95):.6f}deg")
     print(f"  signed step yaw LiDAR-Camera mean={np.mean(yawdiff[pool]):+.7f}deg "
           f"sum={np.sum(yawdiff[pool]):+.3f}deg")
-    print("  INVERSE tests: an inverted factor orientation may indicate a "
-          "conversion convention error, not a learned noise problem.")
-    if np.mean(linv)<.6*np.mean(lerr):
-        print("  WARNING: LiDAR INVERSE agrees much better with OXTS attitude; "
-              "investigate pose-convention conversion before FGO.")
-    if np.mean(cinv)<.6*np.mean(cerr):
-        print("  WARNING: Camera INVERSE agrees much better with OXTS attitude; "
-              "investigate pose-convention conversion before FGO.")
-    print("\nAudit complete. Original OXTS orientation was used ONLY "
-          "after frozen odometry estimation; never adjust method from 0020.")
+    print("  INVERSE tests are DIAGNOSTIC only; never invert data based "
+          "on a post-hoc comparison without verifying transform conventions.")
+    if gt is not None:
+        if np.mean(linv)<.6*np.mean(lerr):
+            print("  WARNING: LiDAR INVERSE agrees much better with OXTS attitude; "
+                  "investigate pose-convention conversion before FGO.")
+        if np.mean(cinv)<.6*np.mean(cerr):
+            print("  WARNING: Camera INVERSE agrees much better with OXTS attitude; "
+                  "investigate pose-convention conversion before FGO.")
+    print("\nAudit complete. If OXTS was unavailable, results describe ONLY "
+          "LiDAR-Camera disagreement, NOT an independent attitude error.")
 
 
 if __name__=="__main__":
