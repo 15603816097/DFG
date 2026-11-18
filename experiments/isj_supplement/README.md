@@ -700,3 +700,58 @@ preserve the empirical distribution shape, and permuted U destroys
 ordering rather than all possible correlations. If results merit a
 revised method, evaluate that revised method on a NEW untouched drive.
 The OXTS/GPS metric reference is correlated with the GPS input.
+
+
+### E. Cross-date Beta-valid U-only permutation controls
+
+The earlier cross-date constant-mean/shuffled-U controls keep r[t] but can
+produce (r,U) pairs that no longer correspond to legal Beta evidence
+(alpha=2*r/U, beta=2*(1-r)/U, requiring alpha,beta>=1). That fact limits
+their interpretation as temporal-information-only ablations.
+
+A new, separate runner implements a stricter control: it swaps U[t] between
+two post-warmup timestamps ONLY when both resulting Beta pairs are valid.
+All r values, each sensor's exact U multiset, and U at t=0..62 stay
+unchanged. The script reports the fraction of actually changed U values
+and refuses ineffective swaps (<5% changed). The method is a constrained
+local-swap random walk, NOT a uniform random permutation; it does not
+preserve the full joint (r,U) distribution.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest \
+  tests/test_isj_cross_date_beta_swap.py \
+  tests/test_isj_cross_date_controls.py \
+  tests/test_isj_cross_date_runner.py -v
+
+# Read-only preflight: verify zero invalid Beta pairs, changed percentages,
+# accepted swaps and mean absolute uncertainty perturbations.
+python -u experiments/isj_supplement/run_cross_date_beta_swap.py \
+  --stage audit --model both --seeds 11,23,47
+
+# Only if audit passes and materially perturbs U:
+set +e
+set -o pipefail
+python -u experiments/isj_supplement/run_cross_date_beta_swap.py \
+  --stage fgo --model both --seeds 11,23,47 \
+  2>&1 | tee logs/isj_cross_date_0930_beta_swap_fgo.log
+
+# Only if FGO returns code 0:
+python -u experiments/isj_supplement/run_cross_date_beta_swap.py \
+  --stage converge --model both --seeds 11,23,47 \
+  --max-extra-passes 4 \
+  2>&1 | tee logs/isj_cross_date_0930_beta_swap_convergence.log
+~~~
+
+This adds six new, uniquely named FGO cases and their separate
+ISJ_CONVERGENCE_* continuations under the uniform LM rule. It does
+not alter checkpoints, original predictions, former eight controls,
+or preexisting GRU/Mamba/Fixed runs.
+
+Interpretation: if original Dynamic U beats Beta-valid shuffled U on
+this pilot, that supports sensitivity to original temporal assignment
+beyond the **invalid Beta-combinations** confound, conditional on
+perturbation strength. It still does not isolate causation or establish
+calibration, robust generalization, or independent position truth.
