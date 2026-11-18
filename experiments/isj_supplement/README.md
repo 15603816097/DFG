@@ -2326,3 +2326,59 @@ a causal sensor-only rotation-confidence score BEFORE testing,
 then compare against strong static/sensor-quality baselines
 and check both ATE AND RPE. Keep blind 0020 untouched until
 method/parameters are frozen; avoid more Q3 threshold tuning.
+
+### AE. Third-sensor rotation diagnostics: STOP the LiDAR/Camera disagreement gate
+
+User ran the last previously predeclared 0027 READ-ONLY gyro
+cross-check successfully: all **7 tests passed** and audit
+exit=0. Existing Stage-6 DEGRADED gyro[t]*actual_dt served as
+the third noisy relative SO(3) source, **not ground truth**.
+On matching triply valid physical factors:
+
+| Quarter | LiDAR–IMU SO3 mean (deg) | Camera–IMU SO3 mean (deg) | LiDAR–IMU signed yaw mean (deg) | Camera–IMU signed yaw mean (deg) |
+|---|---:|---:|---:|---:|
+| Q1 | 0.27402 | 0.27391 | +0.01206 | -0.00092 |
+| Q2 | 0.35184 | 0.37095 | +0.00264 | -0.00546 |
+| Q3 | **0.49301** | **0.48814** | **+0.02440** | +0.00386 |
+| Q4 | 0.36088 | 0.37352 | -0.01042 | -0.00629 |
+
+Q3 LiDAR–IMU SO3 p95=2.24236deg, Camera–IMU
+p95=2.15675deg. Both show increased magnitude
+relative to previous quarters; signed yaw difference
+between LiDAR–IMU and Camera–IMU in Q3 is
++0.02054deg/pair, in agreement with the existing
+LiDAR–Camera signed relative yaw observation. This
+**does not** establish which sensor is wrong. IMU has
+synthetic degradation; all three modalities can
+share motion-condition dependencies. There is no
+independent OXTS attitude reference in the current
+0027 raw folder.
+
+**Decision as of 2026-11-18: STOP exploratory 0027
+intermodal rotation-disagreement threshold mining.**
+The q75 magnitude discrepancy did not predict useful
+local FGO weight adaptation; Q3-only static-noise
+improvements are not evidence of a working temporal
+dynamic gate. Uniformly continued fixed FGO showed
+ATE3D 2.459228m -> 2.420614m at sigma_r .4rad
+(-1.57%) but RPE k1 0.073686m -> 0.084157m and
+RPE k10 0.526835m -> 0.649254m, both worse.
+This cannot be sold as a broadly superior
+method, especially on a repeatedly explored
+development sequence.
+
+Do NOT invent further ad hoc q/IMU yaw thresholds or
+use prospective untouched 0020 for tuning.
+Treat these as valuable **negative controls and
+diagnostic evidence**, not the new paper algorithm.
+Next research step should be a **method-first
+design** with explicit falsifiable reliability
+hypotheses, GT-free input features, frozen
+evaluation protocol (ATE3D/ATE2D/ZRMSE/RPE,
+diverse degradation and stronger static/robust
+baselines), and test after method and parameters
+freeze. The existing GPS reliability, Mamba
+and factor graph work remains available; this
+decision does not establish Mamba/U gains.
+Retain raw data, outputs, model checkpoints and
+the cleaned repository's reproducibility.
