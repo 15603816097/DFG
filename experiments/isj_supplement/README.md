@@ -2195,3 +2195,80 @@ both independent ATE and RPE benefit relative to the strongest
 fixed control, not only beat the original 0.012857rad baseline.
 Do not tune a gate from 0027 subgroup performance and call it
 a prospective test on 0020.
+
+
+### AC. 0027 static rotation noise quarter results: Q3-only benefit; existing discrepancy threshold not predictive
+
+User ran \`audit_dev_lidar_rot_tradeoff.py\` on 0027 successfully,
+4/4 tests passing, read-only run exit 0. All four static sigma
+FGO pose sets had already met the same solver stopping criterion.
+
+At 0.4rad vs unchanged 0.012857rad LiDAR rotational sigma,
+quarterwise *ATE3D* and 10-frame translation RPE:
+
+| quarter | ATE3D baseline -> .4rad (m) | RPE10 baseline -> .4rad (m) | interpretation |
+|---|---|---|---|
+| Q1 (63..1181) | 1.14444 -> 1.24590 | .21389 -> .36204 | WORSE |
+| Q2 (1182..2301) | 3.10710 -> 3.18709 | .42757 -> .74805 | WORSE |
+| Q3 (2302..3421) | 2.56517 -> 2.20360 | .65395 -> .54554 | BETTER |
+| Q4 (3422..4541) | 2.44069 -> 2.58218 | .59294 -> .78363 | WORSE |
+
+The largest localization benefit is **Q3 only**, with estimated
+ATE3D -14.09%, RPE10 -16.58%; ATE and RPE worsen in Q1/Q2/Q4.
+CAUTION: global factors are optimized together, so the
+per-quarter metrics of FULL-TRAJECTORY static weighting are
+NOT an oracle time-varying covariance experiment.
+
+Sensor-only global 75th-percentile LiDAR-vs-Camera incremental
+SO3 disagreement threshold was **0.182038deg**. On same-frame
+subgroups:
+- LOW: original ATE3D 2.28839 vs .4rad 2.27188m,
+  RPE1 0.06830 vs 0.07880m.
+- HIGH: original ATE3D 2.64115 vs .4rad 2.62458m,
+  RPE1 0.07428 vs 0.08576m.
+
+The ATE3D benefit is virtually IDENTICAL in low/high groups
+(~.0165m); RPE worsens in BOTH. Therefore the
+simple global 75th-percentile intermodal angular discrepancy is
+**NOT justified as a dynamic LiDAR rotation gate**.
+Neither Camera nor LiDAR can be deemed ground truth from this
+comparison.
+
+Next step uses **the existing audit script** rather than growing
+a separate experiment package: print sensor-only per-quarter
+statistics from frozen 0027 physical LiDAR and Camera factors:
+angle mean/median/p95, fraction exceeding the descriptive global
+0.182038deg angle threshold, signed LiDAR-vs-Camera yaw
+difference, mean quality scores, average relative translation
+magnitudes and common pair coverage. No post-hoc OXTS/GT or
+optimized pose can enter these sensor-only summary features.
+The purpose is simply to assess whether Q3 shows any distinctive
+*available sensor* footprint that merits further causal testing.
+The sensor-only quarter profiles were added to
+\`audit_dev_lidar_rot_tradeoff.py\` and unit tests in-place.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_lidar_rot_tradeoff.py -v
+echo "PROFILE_TEST_EXIT=$?"
+# Only when tests pass; read-only, no FGO:
+python -u experiments/isj_supplement/audit_dev_lidar_rot_tradeoff.py \
+ > logs/isj_dev_lidar_rot_tradeoff.log 2>&1
+echo "PROFILE_AUDIT_EXIT=$?"
+grep -A 6 "SENSOR-ONLY CHRONOLOGICAL QUARTER PROFILES" \
+ logs/isj_dev_lidar_rot_tradeoff.log
+~~~
+
+**Decision**: If these sensor-only profiles do not clearly
+distinguish the Q3-localized improvement from other times,
+STOP designing disagreement-based LiDAR rotational gates.
+Revisit a distinct research hypothesis and independent
+validation instead of repeatedly mining 0027. Any apparently
+distinct sensor indicator is only a hypothesis from
+already-explored 0027; no performance/novelty claim until
+proper pre-registered evaluation and stronger baselines.
