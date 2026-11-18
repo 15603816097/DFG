@@ -931,3 +931,101 @@ This is exploratory analysis on an already repeatedly inspected drive.
 If it reveals poor IMU label tracking, inspect training-vs-0016
 feature and label distributions and the V6 training-data provenance
 before retraining any network or changing test noise anchors.
+
+
+### J. CORE PAPER TEST: frozen H=3 forecasting vs no-forecast persistence in FGO
+
+This addresses the **anticipation hypothesis**, NOT whether Mamba beats GRU.
+
+The V3 labels and both frozen training dataset builders encode:
+- head0 at source time t: current reliability r[t]
+- head1 at source time t: three-step-ahead reliability r[t+3]
+- head2 at source time t: reliability r[t+2]
+
+For target factor time j=t+3, the **predictive** control uses head1[t]
+and the **no-forecast persistence** control uses head0[t]. Both have access
+ONLY to sensor features through time t. Factor targets j=0..65 use exactly
+fixed sigmas; j>=66 uses r-only sigmas with the same frozen anchors.
+This is a clean horizon-specific comparison with U held constant as a
+CONTROL SWITCH (Ueff=0 after target 66), rather than a test of Beta U.
+
+New scripts:
+- \`audit_future_prediction_vs_persistence.py\`: prediction RMSE/MAE,
+  head1(t)->t+3 vs head0(t)->t+3 on 0027 dev tail or 0016 existing
+  exploratory reference, **read-only**.
+- \`run_future_h3_fgo.py\`: save immutable frozen head1 predictions, audit
+  target alignment, run pairwise GTSAM FGO from SAME stored Fixed-FGO
+  warm start, then run identical uniform convergence checks.
+- \`tests/test_isj_cross_date_future_vs_persistence.py\`
+- \`tests/test_isj_future_h3_fgo.py\`
+
+All outputs are isolated to
+\`results/isj_cross_date/<drive>/forecast_h3/<source>/\` and
+\`factor_graph/ISJ_H3_{GRU,MAMBA}_{PERSIST,PREDICT}_R_ONLY/\`.
+Never overwrite old FGO data or train checkpoints.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_future_vs_persistence.py \
+  tests/test_isj_future_h3_fgo.py -v
+mkdir -p logs
+
+# A: CPU GRU forecast accuracy (dev tail and previously analyzed 0016).
+python -u experiments/isj_supplement/audit_future_prediction_vs_persistence.py \
+  --dataset dev --model gru --device cpu \
+  2>&1 | tee logs/isj_h3_dev_gru_accuracy.log
+python -u experiments/isj_supplement/audit_future_prediction_vs_persistence.py \
+  --dataset 2011_09_30_drive_0016_sync --model gru --device cpu \
+  2>&1 | tee logs/isj_h3_0016_gru_accuracy.log
+
+# B: Save frozen head1[t] at target time t+3; verify cached head0.
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage predict --model gru --device cpu
+
+# C: Print no-leakage/warmup check for both paired controls.
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage audit --model gru
+
+# D: FGO, SAME measurements, SAME warm start, SAME U handling.
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage fgo --model gru \
+  2>&1 | tee logs/isj_h3_0016_gru_fgo.log
+
+# E: Uniform numerical convergence on the same graph.
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage converge --model gru \
+  2>&1 | tee logs/isj_h3_0016_gru_converge.log
+~~~
+
+Run model=\`mamba\` in an environment containing the original
+\`mamba_ssm\` and frozen Mamba checkpoint (do not silently fallback to GRU).
+The model-specific \`--stage predict\` needs PyTorch+official Mamba;
+subsequent \`--stage audit/fgo/converge\` can run in \`dfg-isj\`, because
+they read cached head1 predictions and only need GTSAM+NumPy:
+
+~~~bash
+# In original Mamba-capable environment:
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage predict --model mamba --device cuda
+# Back in the GTSAM/dfg-isj environment:
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage audit --model both
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage fgo --model both
+python -u experiments/isj_supplement/run_future_h3_fgo.py \
+  --stage converge --model both
+~~~
+
+Note: if the frozen V6 checkpoint was trained on a non-V3 data source,
+its intended head1 horizon must be verified from original logs before
+claiming it represents r[t+3]. If Mamba's original backend cannot be
+loaded, report the GRU H3 experiment first and retain the frozen Mamba
+files for later official inference; never substitute an alternate model.
+
+This is a past-explored, 279-frame synthetic-fault pilot with an
+OXTS/GPS-shared reference; it does not establish ISJ-level generalization.
+For new 0020, freeze the protocol and run full preprocessing+inference+
+H3 comparison before looking at sequence performance. Do not tune using
+the new sequence and relabel it held-out.
