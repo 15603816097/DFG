@@ -40,9 +40,9 @@ def test_default_lidar_first_is_backwards_compatible():
         **d,settings=CausalInnovationSettings(motion_policy="lidar_first")
     )
     assert baseline["motion_policy"]=="lidar_first"
-    for key in ("prior_position","innovation",
-                "standardized_score","odometry_source"):
+    for key in ("prior_position","innovation","standardized_score"):
         assert np.array_equal(baseline[key],explicit[key],equal_nan=True)
+    assert np.array_equal(baseline["odometry_source"],explicit["odometry_source"])
 
 
 def test_camera_rot_and_hybrid_fix_synthetic_lidar_angular_drift():
