@@ -150,7 +150,15 @@ def crossdate_bindings(sequence: str, output_root: Path, stage: str):
             stack.enter_context(patch.object(v5, "TEST_SEQUENCES", (sequence,)))
             stack.enter_context(patch.object(v5, "sequence_out", sequence_out))
         elif stage == "mamba":
-            from experiments.cross_sequence import infer_v6_mamba as v6
+            try:
+                from experiments.cross_sequence import infer_v6_mamba as v6
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Cannot import the frozen Mamba implementation in this "
+                    "environment. Install/use the original official Mamba "
+                    "inference environment (including mamba_ssm); never "
+                    "substitute a new model or checkpoint."
+                ) from exc
             stack.enter_context(patch.object(v6, "TEST_SEQUENCES", (sequence,)))
             stack.enter_context(patch.object(v6, "sequence_out", sequence_out))
         elif stage in ("fgo", "converge"):
@@ -283,8 +291,12 @@ def stage_infer(sequence: str, out: Path, model: str, force: bool) -> None:
             f"Partial {model} predictions: inspect {out / 'predictions' / source}; "
             "use --force only after checking they are safe to recompute."
         )
-    if (out / "factor_graph").exists():
-        raise RuntimeError("Refuse to change predictions after FGO results exist")
+    if (out / "factor_graph").exists() and any(p.exists() for p in paths):
+        raise RuntimeError(
+            "Refusing to overwrite existing predictions after FGO results "
+            "exist. A previously absent separate encoder's predictions "
+            "can be added without changing existing model inputs."
+        )
     if model == "gru":
         from experiments.cross_sequence import infer_v5_gru as v5
         for sensor in SENSORS:
