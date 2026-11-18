@@ -1641,3 +1641,69 @@ or geometry conflict causes many false alarms, do not integrate
 an E2 adaptive covariance algorithm; analyze/repair E1 on the 0027
 development sequence. Parameter changes must be recorded and must
 precede the prospective 0020 evaluation.
+
+
+### T. Read-only E2A: GPS U + raw discrepancy complementarity decision gate
+
+The read-only E1 diagnostic using 0027 showed that the new
+**globally propagated** GPS innovation (mean 62.07 m) was far larger
+than the average injected GPS perturbation (2.95 m), and its
+synthetic-GPS-fault AUROC was **0.6006**, worse than the existing
+5-step GPS/LiDAR *raw displacement magnitude mismatch* AUROC **0.8732**.
+The global-pose prior is not validated; do not use it in FGO.
+The old negative-feedback score q was capped at 1 for 96.76%
+of valid frames, despite useful ranking in its raw discrepancy.
+This is a candidate information-loss issue, **not** proof that
+using the raw score will improve localization.
+
+New \`audit_dev_gps_u_feedback_complementarity.py\` is a cheap,
+read-only decision experiment. It computes **only on 0027**:
+(1) \`R=1-r\` from original saved GPS GRU/Mamba reliability;
+(2) \`D=log1p(gps_nis)\` from original 5-step LiDAR/GPS
+measurement discrepancy, WITHOUT clipping to quality q;
+(3) \`U\` saved evidential uncertainty. Note that gps_nis
+is a rough heuristic score, **not** a statistically calibrated
+normalised innovation squared.
+
+Fault label is pre-existing synthetic GPS perturbation >=5m
+against *original OXTS GPS*, NOT real GNSS fault or an
+independent localization truth. All features use frozen sensor
+measurements before reading this label. For each exact original
+model-specific chronological train/val/test split, the script
+reports (a) stand-alone fault-detection AUC for R,D,U and
+(b) fixed low-capacity L2 logistic probes for R, R+D and R+D+U,
+with each probe fitted ONLY on the TRAIN portion, including
+normalization. It prints within-TEST r-risk quartile results.
+The probe is a **diagnostic measuring predictive complementarity**,
+not the proposed factor covariance mapping, and does not
+establish causality or external generalization.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_gps_u_feedback_complementarity.py -v
+echo "TEST_EXIT=$?"
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_gps_u_feedback_complementarity.py \
+  > logs/isj_dev_gps_u_feedback_complementarity.log 2>&1
+echo "E2A_EXIT=$?"
+cat logs/isj_dev_gps_u_feedback_complementarity.log
+~~~
+
+**Decision rule**: if R+D+U does not improve over R+D on both
+0027 model-chronological VAL and TEST (and across both backbones
+or with a clear backbone-specific limitation), there is currently
+no evidence that adding U helps *GPS fault detection conditional
+on the other two signals*. Do not engineer an arbitrary U gate
+solely to obtain a positive 0027 ATE. If it improves, the
+next step is a physical/causal geometry and correct-covariance
+diagnostic plus a predeclared U/no-U strength-matched FGO
+ablation on 0027; this does not yet warrant reading 0020.
+If neither model supports additive value, keep results as
+negative findings and reconsider the novelty target. Both
+the early 0027 segment and its later segments have been repeatedly
+examined, so no result is an independent external test.
