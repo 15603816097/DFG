@@ -48,12 +48,12 @@ CASES = {
     "gps": {
         "name": "ISJ_RESADAPT_GPS",
         "type": "adaptive",
-        "sensors": ("gps",),
+        "sensors": ["gps"],
     },
     "all": {
         "name": "ISJ_RESADAPT_GPS_IMU_CAMERA",
         "type": "adaptive",
-        "sensors": ("gps", "imu", "camera"),
+        "sensors": ["gps", "imu", "camera"],
     },
 }
 
