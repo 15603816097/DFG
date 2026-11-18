@@ -237,7 +237,7 @@ def run_fgo(seq: str, out: Path, models, specs):
             rows.append({
                 "sequence":seq,"case":name,"model":spec["model"],
                 "mode":spec["mode"],"ATE3D_m":ate,
-                "vs_fixed_pct":100*(fixed_ate-ate)/fixed_ate,"status":status,
+                "vs_fixed_pct":100*(fixed_ate-ate)/fixed_ate,
             })
             print(f"{name:<40} ATE3D={ate:.6f}m ({status})")
     label="_".join(models)
