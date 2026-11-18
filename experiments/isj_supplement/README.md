@@ -2127,3 +2127,71 @@ stationary, compare the resulting 3D, 2D, Z and RPE metrics
 without changing their declared sigma values. If any case
 is NOT_STABLE, don't make a ranking. No 0016/0020 access,
 no checkpoint edits, no changes to the previous pilot outputs.
+
+
+### AB. Observed uniform convergence and next read-only local trade-off audit
+
+The user ran \`run_dev_lidar_rot_sigma_convergence.py\` on 0027:
+10/10 related pytest passed; source-manifest audit and convergence exit
+were both 0. All FOUR noise variants reported
+\`stationary_under_rule=True\` under equal frozen stopping rules;
+the 0.4rad configuration needed 3 additional LM passes, others 2.
+
+| LiDAR static σrot(rad) | ATE3D (m) | ATE2D (m) | Z-RMSE (m) | translation RPE k1 (m) | RPE k10 (m) |
+|---:|---:|---:|---:|---:|---:|
+| .01285714 original | 2.459228 | 2.377495 | **.628743** | **.073686** | **.526835** |
+| .040000 | 2.582553 | 2.366627 | 1.033758 | .096848 | .801273 |
+| .100000 | 2.459968 | 2.375584 | .638781 | .082236 | .627618 |
+| .400000 | **2.420614** | **2.319243** | .693170 | .084157 | .649254 |
+
+Relative to original σrot:
+- σrot=.4rad: development **ATE3D -1.57%**, **ATE2D -2.45%**,
+  but **Z-RMSE +10.25%**, **RPE k1 +14.21%**, **RPE k10 +23.24%**.
+- There is a clear full-trajectory *ATE-vs-RPE* trade-off. NO
+  reliable overall superiority, no monotonic benefit of
+  de-weighting rotation, and no current dynamic-gate evidence.
+- Source 0027 is development/in-sample; original OXTS/GPS
+  evaluation reference shares data provenance with the GPS input.
+- Numerical stability under the same local LM stopping criterion
+  does NOT establish global optimum or generalization.
+
+Next **read-only** experiment:
+\`audit_dev_lidar_rot_tradeoff.py\` uses ONLY already saved uniformly
+converged 0027 pose results (rejects missing/nonstationary cases)
+and Stage-6 physical LiDAR/Camera factors. It reports identical
+matched-frame/trajectory evaluation metrics for:
+1. whole development sequence (63..4541);
+2. chronological Q1..Q4;
+3. high vs low LiDAR/Camera pair SO(3) disagreement defined
+   entirely from sensor observations as the **0027 q75
+   discrepancy threshold** (no GT-derived gating); for these
+   groups pairwise RPE is strictly k=1, so grouping is aligned
+   with the immediate disagreement observation.
+All subgroup comparisons use the same evaluation masks for every
+static rotation weight. This is exploratory, not a trained online
+dynamic rotation-confidence model and not independent validation.
+No optimization runs, no saved files changed, no 0016/0020 accessed.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_lidar_rot_tradeoff.py -v
+echo "SUBGROUP_TEST_EXIT=$?"
+# ONLY after pass: read-only diagnostic
+python -u experiments/isj_supplement/audit_dev_lidar_rot_tradeoff.py \
+  > logs/isj_dev_lidar_rot_tradeoff.log 2>&1
+echo "SUBGROUP_AUDIT_EXIT=$?"
+cat logs/isj_dev_lidar_rot_tradeoff.log
+~~~
+
+Stop criterion: if increased static sigma improves only long-term ATE
+but worsens per-frame motion even in high angular-disagreement
+regions, any future dynamic splitting method must demonstrate
+both independent ATE and RPE benefit relative to the strongest
+fixed control, not only beat the original 0.012857rad baseline.
+Do not tune a gate from 0027 subgroup performance and call it
+a prospective test on 0020.
