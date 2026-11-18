@@ -104,9 +104,34 @@ def test_diagnostic_does_not_run_fgo_or_write_files(tmp_path,monkeypatch,capsys)
     assert "HIGH SENSOR DISAGREEMENT" in output
     assert "LOW SENSOR DISAGREEMENT" in output
     assert "Q4" in output
+    assert "SENSOR-ONLY CHRONOLOGICAL QUARTER PROFILES" in output
+    assert "high_angle_fraction=" in output
 
 
 def test_missing_or_not_stationary_case_is_rejected(tmp_path,monkeypatch):
     monkeypatch.setattr(script.conv,"OUT",tmp_path/"missing")
     with pytest.raises(FileNotFoundError,match="Missing required"):
         script.get_cases()
+
+
+def test_sensor_only_profile_contains_no_ground_truth_and_uses_pair_mask():
+    m=_test_measurements(120)
+    angle,valid=script.angle_deg_lidar_camera(m)
+    m.camera_valid[20:25]=False
+    angle,valid=script.angle_deg_lidar_camera(m)
+    threshold=float(np.percentile(angle[valid],75))
+    profile=script.sensor_only_quarter_profile(
+        m,angle,valid,threshold,10,100
+    )
+    assert profile["valid_pairs"]==85
+    assert profile["valid_pair_fraction"]==pytest.approx(85/90)
+    assert 0<=profile["high_disagreement_fraction"]<=1
+    assert profile["angle_p95_deg"]>profile["angle_median_deg"]
+    assert profile["lidar_quality_mean"]==pytest.approx(1.)
+    assert profile["camera_quality_mean"]==pytest.approx(1.)
+    assert profile["lidar_step_distance_mean_m"]==pytest.approx(0.)
+    assert profile["camera_step_distance_mean_m"]==pytest.approx(0.)
+    with pytest.raises(ValueError,match="bounds"):
+        script.sensor_only_quarter_profile(
+            m,angle,valid,threshold,-1,100
+        )
