@@ -881,3 +881,53 @@ for context (acceleration is not directly used in this Stage-7 IMU factor).
 No output artifacts or model parameters are modified. Correlations are
 descriptive, not formal calibration; original OXTS is not an independent
 high-precision inertial reference.
+
+
+### I. V3 label-origin audit and cross-date V3-style factor-target diagnosis
+
+V3 label generation (\`experiments/dataflow_fix/build_same_source_factor_labels_v3.py\`)
+calls \`compute_oracle_factor_reliability()\`. IMU targets are calculated
+from the degraded gyro's rotation increment against the relative rotation
+of the development fixed-factor-graph poses, then mapped as
+\`clip(exp(-(error_deg / 2.0)**2), 0.01, 1.0)\`. It is **not**
+a direct label for \`norm(degraded_gyro - clean_gyro)\`. The user's
+4544-frame V3 training-file audit passed a max formula difference of
+2.98e-08; this validates label construction, not learned predictions.
+
+V5's default data path is:
+\`results/predictive_factor_reliability_v3_same_source/factor_reliability_training_data.npz\`.
+V6 training has a configurable \`--data\` defaulting to
+\`data/factor_reliability_training_data.npz\`; the actual command used
+for the frozen checkpoint must be checked separately before asserting
+V5 and V6 used identical training data.
+
+To compare 0016 frozen r predictions to the *same-formula* proxy reliability,
+use the new **read-only** diagnostic (no GTSAM optimize, no checkpoint write):
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set -o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_factor_targets.py \
+  tests/test_isj_cross_date_runner.py -v
+mkdir -p logs
+python -u experiments/isj_supplement/audit_cross_date_factor_targets.py \
+  --sequence 2011_09_30_drive_0016_sync \
+  2>&1 | tee logs/isj_cross_date_0930_factor_targets.log
+~~~
+
+This uses the saved local \`FINAL_S0_fixed/poses.npy\` as the reference
+rotation/pose trajectory, with the existing frozen Stage-7 sensor factors
+and GPS data, and reports MAE/RMSE/correlations versus reference labels,
+plus RMSE of a constant reference-mean predictor. It excludes initial
+63 no-full-window frames. The reference is formed using the measurements
+and is NOT independent truth; the original development "fixed FG"
+reference may have different graph parameters or initialization from this
+0016 reference, so this diagnoses a similar label construction on a new
+drive, not formally equivalent or independently calibrated oracle labels.
+This is exploratory analysis on an already repeatedly inspected drive.
+If it reveals poor IMU label tracking, inspect training-vs-0016
+feature and label distributions and the V6 training-data provenance
+before retraining any network or changing test noise anchors.
