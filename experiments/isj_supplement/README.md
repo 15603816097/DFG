@@ -2272,3 +2272,57 @@ validation instead of repeatedly mining 0027. Any apparently
 distinct sensor indicator is only a hypothesis from
 already-explored 0027; no performance/novelty claim until
 proper pre-registered evaluation and stronger baselines.
+
+
+### AD. Sensor-only Q1-Q4 profile outcome and final triangulation check
+
+User ran the existing 0027 quarter-profile audit (5/5 pytest,
+exit 0). The previous Q3-only 0.4-rad static rotation-weight FGO
+ATE/RPE benefit did **not** align with the LIDAR/Camera SO(3)
+disagreement magnitude or high-discrepancy fraction:
+Q2 max angle mean **0.17994°** and high-angle fraction **34.26%**,
+but Q2 localization deteriorated under 0.4 rad. Q3 had
+angle mean **0.14721°** and high-angle fraction **24.12%**
+yet was the only quarter to improve ATE and 10-frame RPE.
+LiDAR-quality mean remained ~**0.94** in all quarters.
+Q3 had the highest *signed incremental* LiDAR-minus-Camera yaw
+mean **+0.02055°/pair**, versus Q1 +0.01298°, Q2 +0.00810°,
+Q4 -0.00413°. The Q3 signed mean is an exploratory clue,
+NOT a validated sensor-error measure: it does not tell us which
+sensor is wrong or whether online sigma weighting helps.
+
+As the LAST diagnostic before stopping 0027 threshold mining,
+the **same** \`audit_dev_lidar_rot_tradeoff.py\` now prints
+\`DEGRADED-IMU THIRD-SENSOR ROTATION CROSSCHECK\`. It
+reconstructs GTSAM-compatible Exp(gyro[t]*actual_dt) SO3
+relative rotations from the SAVED, DEGRADED 0027 IMU and
+timestamp arrays (no raw OXTS attitude or reference poses).
+Reports Q1..Q4 matched LiDAR-IMU and Camera-IMU geodesic
+and signed yaw residual statistics. This can indicate which
+sensor agrees with the *third noisy modality*, but IMU itself
+has synthetic faults and OXTS provenance; do not treat it as
+independent truth or tune from 0020.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_dev_lidar_rot_tradeoff.py -v
+echo "TRIPLE_TEST_EXIT=$?"
+# Only after pass, read-only and no FGO:
+python -u experiments/isj_supplement/audit_dev_lidar_rot_tradeoff.py \
+  > logs/isj_dev_lidar_rot_tradeoff.log 2>&1
+echo "TRIPLE_AUDIT_EXIT=$?"
+grep -A 6 "DEGRADED-IMU THIRD-SENSOR ROTATION CROSSCHECK" \
+  logs/isj_dev_lidar_rot_tradeoff.log
+~~~
+
+**Decision limit**: If Q3 residual pattern is absent/ambiguous,
+STOP the LiDAR-rotation gate hypothesis and return to a broader
+uncertainty-aware fusion research redesign. If Q3 is distinctive
+with respect to the IMU as well, it is still a hypothesis, not
+evidence of generalization or method superiority. Specify
+a causal sensor-only rotation-confidence score BEFORE testing,
+then compare against strong static/sensor-quality baselines
+and check both ATE AND RPE. Keep blind 0020 untouched until
+method/parameters are frozen; avoid more Q3 threshold tuning.
