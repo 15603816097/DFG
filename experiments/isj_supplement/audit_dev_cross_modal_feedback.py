@@ -64,6 +64,58 @@ def corr(a, b):
     return float(np.corrcoef(a, b)[0, 1])
 
 
+
+
+def beta_pair_integrity(r, u, valid_mask, tol=1e-5):
+    """Read-only r/U consistency audit, WITHOUT silently repairing predictions.
+
+    Both V5 and V6 model heads implement alpha=evidence+1 and
+    beta=evidence+1, and output r=alpha/(alpha+beta), U=2/(alpha+beta).
+    Consequently, U must be positive and U<=2*min(r,1-r) (up to
+    floating-point/serialization tolerance). A large failure suggests
+    mixed or stale files, postprocessing, or different checkpoint lineage.
+
+    Return offending target-frame indices and the amount by which the
+    necessary upper bound is exceeded; no labels are read for this check.
+    """
+    r = np.asarray(r, dtype=np.float64)
+    u = np.asarray(u, dtype=np.float64)
+    mask = np.asarray(valid_mask, dtype=bool)
+    if (r.ndim != 1 or r.shape != u.shape or mask.shape != r.shape
+            or len(r) == 0):
+        raise ValueError("Beta integrity arrays must have matching 1D shape")
+    if (not np.isfinite(r).all() or not np.isfinite(u).all()
+            or np.any((r < 0) | (r > 1))
+            or np.any((u < 0) | (u > 1))):
+        raise ValueError("Invalid r/U values")
+    if not np.isfinite(tol) or tol < 0:
+        raise ValueError("Invalid tolerance")
+    bound = 2.0 * np.minimum(r, 1.0-r)
+    excess = u - bound
+    bad = mask & ((u <= 0.0) | (excess > tol))
+    idx = np.flatnonzero(bad)
+    candidates = np.flatnonzero(mask)
+    if len(candidates) == 0:
+        raise ValueError("Empty valid model-output mask")
+    examples = [
+        {
+            "frame": int(i),
+            "r": float(r[i]),
+            "U": float(u[i]),
+            "upper_bound": float(bound[i]),
+            "excess": float(excess[i]),
+        }
+        for i in idx[:8]
+    ]
+    return {
+        "total": int(len(candidates)),
+        "invalid_count": int(len(idx)),
+        "invalid_pct": float(100.0*len(idx)/len(candidates)),
+        "max_excess": float(np.max(excess[candidates])),
+        "zero_U_count": int(np.sum(mask & (u <= 0))),
+        "examples": examples,
+    }
+
 def main():
     base = ROOT / "results" / "degraded_four_sensor_measurements"
     lidar_path = ROOT / "results" / "lidar_physical_oracle_benchmark" / "physical_lidar_factor_data.npz"
@@ -146,11 +198,34 @@ def main():
             u = np.asarray(np.loadtxt(up), dtype=float).reshape(-1)
             if len(r) != n or len(u) != n:
                 raise ValueError(f"{name}/{sensor}: prediction length mismatch")
+            t = reference[sensor]
+            evalmask = np.arange(n) >= CAL.expected_warmup
+            integrity = beta_pair_integrity(r, u, evalmask)
+            print(
+                f"{name:5s} Beta pair audit: "
+                f"bad={integrity['invalid_count']}/{integrity['total']} "
+                f"({integrity['invalid_pct']:.3f}%), "
+                f"max_bound_excess={integrity['max_excess']:+.8f}, "
+                f"zero_U={integrity['zero_U_count']}"
+            )
+            if integrity["invalid_count"] > 0:
+                for ex in integrity["examples"]:
+                    print(
+                        f"    BAD frame={ex['frame']} "
+                        f"r={ex['r']:.9f} U={ex['U']:.9f} "
+                        f"upper_bound={ex['upper_bound']:.9f} "
+                        f"excess={ex['excess']:+.9f}"
+                    )
+                print(
+                    f"{name:5s} CALIBRATION SKIPPED for {sensor.upper()}: "
+                    "saved r/U arrays violate the constraints of the "
+                    "original Beta model. Inspect checkpoint/inference "
+                    "provenance; no automatic clipping or silent repair."
+                )
+                continue
             calibrated, weights = beta_soft_evidence_update(
                 r, u, q, valid_feedback=mask, settings=CAL,
             )
-            t = reference[sensor]
-            evalmask = np.arange(n) >= CAL.expected_warmup
             before = float(np.mean(np.abs(r[evalmask]-t[evalmask])))
             after = float(np.mean(np.abs(calibrated[evalmask]-t[evalmask])))
             print(
