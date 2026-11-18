@@ -1359,3 +1359,59 @@ Before final manuscript experiments, freeze a new feedback mechanism
 that treats measurement agreement as *lack of contradiction*, not as
 proof of absolute GPS reliability. Existing V6 training input provenance
 remains unconfirmed.
+
+
+### P. Decision gate after failed two-sided Beta feedback on development 0027
+
+The 2026-11-18 read-only server audit returned all 14 tests PASS, 4479
+valid prediction samples per sensor and 0 invalid Beta pairs for both
+GRU V5 and Mamba V6 (tails excluded). On 0027, the **two-sided**
+\`r*=(2r+kUq)/(2+kU)\` with GPS/IMU-LiDAR consistency q worsened
+reconstructed-label MAE:
+GPS GRU 0.121810->0.153622 and Mamba 0.118842->0.146142;
+IMU GRU 0.078406->0.079700 and Mamba 0.071694->0.080056.
+GPS q<1 in only 3.2373% of 4479 valid frames; IMU q<1 in **0%**.
+Therefore DO NOT integrate this calibration into FGO or publish it
+as a positive innovation. Agreement without contradiction cannot
+justify moving reliability toward 1. These are development-data
+diagnostics; label reference is not independent truth.
+
+The same audit found positive Pearson association of U and
+absolute reliability-label error:
+GPS GRU +0.67735, Mamba +0.61210; IMU GRU +0.54930,
+Mamba +0.29067. These aggregate values may be driven by training
+frames or time distribution shifts. Before investing in ANY further
+U-dependent covariance mapping, audit its error-risk ranking
+separately on the exact original chronological train/validation/test
+index splits:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest \
+    tests/test_isj_dev_uncertainty_risk_by_split.py -v
+python -u experiments/isj_supplement/audit_dev_uncertainty_risk_by_split.py
+~~~
+
+The new audit reports Pearson/Spearman between U and
+\`abs(predicted_r - V3_proxy_target)\` and rank-AUROC for
+identifying the within-split highest 20% absolute errors. It uses
+**original V5/V6 training-code split boundaries**, which are not
+identical because V5 computes its split cutoffs from full n while V6
+uses usable_end=n-horizon+1, and excludes the final two unpredicted
+frames from both. It requires only numpy and saved results, writes
+no files and does not rerun FGO.
+
+Do not call any part of the same 0027 drive a new independent
+external test. If U ranks prediction error only on training frames,
+the evidential-U contribution should be dropped or substantially
+redesigned. If U ranks error on the internal holdout and prospectively
+on newly collected KITTI drives, it may support a more carefully
+calibrated selective-confidence module, but this alone is not an
+ISJ-worthy localization benefit. Freeze model provenance, signal
+definitions, base baselines, and multiple unseen sequences before
+making a final claim. No arbitrary threshold tuning on explored 0016.
