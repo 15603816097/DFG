@@ -18,8 +18,14 @@ previously explored 0016 or prospective 0020 for this experiment.
 """
 
 from dataclasses import replace
+from pathlib import Path
+import sys
 
 import numpy as np
+
+ROOT=Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0,str(ROOT))
 
 from experiments.factor_graph import run_stage6_v6_mamba_factor_graph_ablation as s6
 from experiments.isj_supplement.audit_dev_causal_gps_innovation_e1 import (
