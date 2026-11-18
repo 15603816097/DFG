@@ -15,6 +15,7 @@ attitude or the diagnostic inverse test to construct a deployable
 factor or optimize a paper method.
 """
 
+import argparse
 import sys
 from pathlib import Path
 import numpy as np
@@ -28,7 +29,8 @@ from src.reliability.causal_gps_position_innovation import (
     CausalInnovationSettings,
 )
 
-SEQUENCE=ROOT/"dataset"/"kitti"/"2011_10_03"/"2011_10_03_drive_0027_sync"
+DRIVE_NAME="2011_10_03_drive_0027_sync"
+SEQUENCE=ROOT/"dataset"/"kitti"/"2011_10_03"/DRIVE_NAME
 WARMUP=63
 END_MARGIN=2
 CFG=CausalInnovationSettings()
@@ -45,11 +47,42 @@ def rpy_to_matrix(roll,pitch,yaw):
     return Rz@Ry@Rx
 
 
+def resolve_sequence_dir(sequence_dir):
+    """Fail closed: user may relocate 0027, but NEVER substitute 0016/0020."""
+    seq=Path(sequence_dir).expanduser().resolve()
+    if seq.name!=DRIVE_NAME:
+        raise ValueError(
+            f"Expected the exact drive directory {DRIVE_NAME}, got {seq}. "
+            "Never substitute 0016/0020 or unrelated OXTS files."
+        )
+    oxts=seq/"oxts"/"data"
+    if not oxts.is_dir():
+        raise FileNotFoundError(
+            f"0027 original OXTS data directory missing: {oxts}\\n"
+            "Locate the existing 0027 raw drive on the server and pass "
+            "--sequence-dir /absolute/path/2011_10_03_drive_0027_sync. "
+            "Processed factor NPZ files do NOT contain an independent "
+            "replacement for original OXTS attitude."
+        )
+    return seq
+
+
 def reference_imu_rotation_pairs(seq_path,n):
-    oxts=seq_path/"oxts"/"data"
+    oxts=Path(seq_path)/"oxts"/"data"
     names=sorted(oxts.glob("*.txt"))
     if len(names)!=n:
-        raise ValueError(f"Expected {n} original OXTS files, got {len(names)}")
+        raise ValueError(
+            f"Expected {n} original 0027 OXTS frames at {oxts}, "
+            f"found {len(names)}. Check that the raw 0027 archive "
+            "was extracted completely and no other drive was selected."
+        )
+    expected=[f"{i:010d}.txt" for i in range(n)]
+    actual=[x.name for x in names]
+    if actual!=expected:
+        raise ValueError(
+            f"Original OXTS filenames must exactly match 0000000000.txt "
+            f"through {n-1:010d}.txt in the 0027 drive."
+        )
     rpys=np.empty((n,3))
     for t,name in enumerate(names):
         vals=np.asarray(np.loadtxt(name),float).reshape(-1)
@@ -125,12 +158,25 @@ def report(name,rot,gt,valid,limit):
     return selected,select_inv,signed[m]
 
 
-def main():
+def main(argv=None):
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--sequence-dir",type=Path,default=SEQUENCE,
+        help=(
+            "Absolute or relative path to the EXACT original "
+            "2011_10_03_drive_0027_sync directory containing oxts/data. "
+            "Does not open 0016/0020."
+        ),
+    )
+    args=parser.parse_args(argv)
+    # Check the original OXTS BEFORE processing results, so missing raw
+    # files get a useful location message, not a vague frame-count error.
+    sequence_dir=resolve_sequence_dir(args.sequence_dir)
     m=s6.load_measurements()
     n=len(m.gps_local)
     if n!=4544:
         raise ValueError(f"Unexpected 0027 frame count {n}")
-    gt=reference_imu_rotation_pairs(SEQUENCE,n)
+    gt=reference_imu_rotation_pairs(sequence_dir,n)
     L=np.asarray(m.lidar_between,float)[:n-1,:3,:3]
     C=np.asarray(m.camera_between,float)[:n-1,:3,:3]
     lv=np.asarray(m.lidar_valid,bool)[:n-1] & (
@@ -145,7 +191,7 @@ def main():
     print("0027 READ-ONLY OXTS/INS ROTATION INCREMENT CHECK")
     print("Original OXTS orientation is REFERENCE ONLY, not independent absolute GT")
     print("Stage-6 physical LiDAR/Camera between factors in calibrated IMU/body frame")
-    print(f"reference={SEQUENCE}/oxts/data; frames={n}")
+    print(f"reference={sequence_dir}/oxts/data; frames={n}")
     print("SO(3) error and signed local yaw angle; inverse test is diagnostic only")
     print("Compare the SAME common valid timestamp pairs for both sensors")
     print("No weights, no FGO, no training, no 0016/0020, no file writes")
