@@ -1770,3 +1770,61 @@ cat logs/isj_dev_odometry_geometry.log
 Existing experimental outputs preserved, prospective 0020 not read.
 Do not infer publication-ready method improvements from diagnostic
 AUCs on already explored 0027.
+
+
+### V. 0027 odometry geometry audit result and signed-heading follow-up
+
+User reported \`audit_dev_odometry_geometry.py\` exited 0,
+pytest 5/5 passed. Against original OXTS/GPS-derived (not independent)
+reference, Stage-6 **physical LiDAR** gave:
+
+| k | norm MAE (m) | vector MAE (m) | unsigned heading median |
+|--:|--:|--:|--:|
+| 1 | .044 | .464 | 28.8 deg |
+| 5 | .152 | 2.302 | 28.6 deg |
+| 20 | .543 | 9.151 | 28.5 deg |
+| 63 | 1.578 | 28.039 | 28.2 deg |
+
+The magnitude-only odometry is far better than its globally aligned
+vector estimate, pointing to coordinate/yaw propagation or bootstrap
+error, but **absolute median does NOT prove a constant 28-degree
+offset**, because it discards the sign. The earlier Camera vector
+comparison also **reused LiDAR's propagated world rotations**, so it
+did **not** independently test Camera heading.
+
+New \`audit_dev_signed_heading.py\`: source-specific separate
+LiDAR and Camera historical (first 63 degraded GPS frames) XY yaw
+bootstrap and source-specific SO(3) propagation; signed heading
+circular mean and median, unsigned median, norm/vector errors
+on k=1,5,20, stratified into four chronological blocks. It also
+computes one *whole-drive original OXTS/GPS* best-fit static yaw
+for diagnostic upper-bound vector error ONLY. This **uses future
+evaluation references**, thus MUST NOT be deployed as an algorithm,
+trained on, or described as a valid localization improvement.
+Do not use the clean reference to infer real sensor bias with
+independent accuracy. Never access 0020/0016 for this diagnosis.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_signed_heading.py -v
+echo "SIGNED_HEADING_TEST_EXIT=$?"
+# Only after tests pass:
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_signed_heading.py \
+  > logs/isj_dev_signed_heading.log 2>&1
+echo "SIGNED_HEADING_AUDIT_EXIT=$?"
+cat logs/isj_dev_signed_heading.log
+~~~
+
+Decision: if signed angle remains near a consistent sign and
+magnitude across time while oracle static yaw reduces errors,
+investigate initial yaw/coordinate conversion using only available
+historical (no future/clean-GT) information. If signed error
+changes substantially by quarter, investigate SO(3) propagation
+and odometry rotational drift. Do not immediately invent a new
+U factor mapping or run FGO until geometry is understood.
