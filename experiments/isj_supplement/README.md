@@ -1415,3 +1415,72 @@ calibrated selective-confidence module, but this alone is not an
 ISJ-worthy localization benefit. Freeze model provenance, signal
 definitions, base baselines, and multiple unseen sequences before
 making a final claim. No arbitrary threshold tuning on explored 0016.
+
+
+### Q. New 0020 cross-sequence archive: preserve as prospective evaluation
+
+2026-11-18 split-aware 0027 diagnostics (server tests 4/4 PASS)
+confirm that GPS Beta vacuity U still ranks high-error reliability
+predictions on the **internal** chronological TEST span:
+GRU U-error AUC=0.8729 and Mamba AUC=0.8793. The Mamba IMU
+internal-TEST AUC is weaker (0.6287); Camera Mamba=0.6685.
+These results are promising GPS-specific **risk-ranking** evidence,
+NOT proof U improves localization or transfers to an independent drive.
+Previous **two-sided U+q Beta feedback degraded MAE on all four
+GPS/IMU comparisons** and is NOT accepted as the paper method.
+
+A newly uploaded \`2011_09_30_drive_0020_sync.zip\` is intended as a
+**prospective held-out KITTI drive**. Before fitting a new method on
+this drive, first inspect/install the raw data safely, WITHOUT looking
+at its labels, prediction metrics, ATE or doing exploratory parameter
+searches. Data preparation can be done independently of new method
+selection as long as the original 0027 degradation plan and all
+preprocessing settings remain frozen.
+
+The helper \`install_kitti_sync_zip.py\` previews the ZIP layout by
+default and **only writes** under a NEW drive folder with the explicit
+\`--install\` flag. It handles either a \`<drive>/...\` or
+\`<date>/<drive>/...\` ZIP root, rejects duplicate/traversal/symlink
+entries, checks available disk, extracts into a temporary sibling,
+and renames atomically. It never overwrites an existing drive folder
+or results. Date-level KITTI calibration files are separate from most
+sync ZIPs; reuse the official **same-date** 2011_09_30 files already
+on disk with 0016, and NEVER borrow different-date calibrations.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_install_kitti_sync_zip.py -v
+
+ZIP=$(find /root /home/vipuser -maxdepth 8 -type f \
+    -name '2011_09_30_drive_0020_sync.zip' -print -quit 2>/dev/null)
+echo "ARCHIVE=$ZIP"
+if [ -n "$ZIP" ]; then
+  # Read-only preview; no archive extraction.
+  python -u experiments/isj_supplement/install_kitti_sync_zip.py \
+    --archive "$ZIP"
+fi
+~~~
+
+After verifying the preview and free space, opt in to installation:
+
+~~~bash
+python -u experiments/isj_supplement/install_kitti_sync_zip.py \
+  --archive "$ZIP" --install
+python -u experiments/isj_supplement/run_cross_date.py \
+  --sequence 2011_09_30_drive_0020_sync --stage inspect
+~~~
+
+If \`--stage inspect\` reports \`READY_RAW\`, stop and retain the drive
+for the FINAL frozen-method evaluation. Do **not** tune the new
+GPS evidence gating or choose parameters based on 0020 results.
+For broader final validity, obtain another genuinely separate KITTI
+drive/date (e.g. 2011_09_26) rather than treating two drives from
+2011_09_30 as independent acquisition conditions. All test claims
+must disclose KITTI OXTS/GPS reference non-independence and synthetic
+corruptions. Neither artifact upload nor this read-only preview
+constitutes having run any held-out FGO experiment.
