@@ -1972,3 +1972,79 @@ does not identify which sensor is wrong. Never call Camera ground
 truth. Never delete untracked \`external/\`, \`logs/\` or \`results/\`
 as a blanket cleanup operation, since these can contain unique raw
 data and experimental evidence. Preserve the prospective 0020 drive.
+
+
+### Z. 0027 physical-camera source check and first LiDAR-rotation sigma FGO sensitivity
+
+The user ran the repaired SO(3) diagnostic on 0027 successfully:
+pytest 6/6, audit exit 0, **4396 matched LiDAR/Camera pairs**.
+No original 0027 OXTS attitude raw data were on the default server
+path. Mean LiDAR-versus-Camera SO(3) angle **0.15361deg**, p95
+**0.30137deg**; mean signed LiDAR-minus-Camera relative yaw step
+**+0.009426deg**, arithmetic sum **+41.437deg**. Per-quarter
+signed sums **+14.52,+8.78,+22.67,-4.53deg**. Inverting only
+the LiDAR rotation worsens the LiDAR-vs-Camera mean discrepancy
+from **0.15361deg** to **1.53031deg**; this does **not** prove
+the absolute direction convention of either factor against an
+independent attitude reference. The 41.437deg is arithmetic
+signed step accumulation, not a validated global SO3 residual.
+Without OXTS, neither sensor can be declared independently
+"correct" from the pairwise comparison.
+
+Source review:
+\`experiments/degradation/build_degraded_four_sensor_measurements.py\`
+calls \`StereoVisualOdometry.estimate(a,b,c)\` on degraded
+stereo images to generate
+\`degraded_camera_factor_data.npz\`; the routine uses ORB/stereo
+3D-PnP-RANSAC, not GPS position as an input. The Stage-6 loader
+reads this camera file, overrides only LiDAR factors with a
+separate physical LiDAR ICP benchmark. This confirms the
+**intended** code-generation path, but the exact provenance of
+the server's saved NPZ artifacts should still be independently
+reconciled with run manifests and dates when available.
+
+Next predeclared diagnostic is
+\`run_dev_lidar_rot_sigma_ablation.py\`: exact original Stage-6
+fixed four-sensor FGO, frozen sensor measurements, initialization,
+graph topology, solver and **all non-LiDAR-rotation sigmas**.
+Only vary fixed \`LIDAR_R0\` on 0027 across:
+\`0.012857142857\`, \`0.04\`, \`0.10\`, \`0.40\` rad. These
+are **static sensitivity controls**, not proposed method or
+hyperparameter selection from a prospective test drive. Results
+go under a new output root
+\`results/isj_dev_lidar_rot_sigma_v1\`; any partial/mismatched
+existing folder causes a hard error. Original Stage-6 output is
+preserved. The initial 100-iteration GTSAM LM may not converge
+uniformly; compare pilot results cautiously before
+a convergence-controlled rerun. No 0016 or 0020 data access.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_lidar_rot_sigma_ablation.py -v
+echo "ROT_SIGMA_TEST_EXIT=$?"
+# First read-only preflight:
+python -u experiments/isj_supplement/run_dev_lidar_rot_sigma_ablation.py \
+  --stage audit
+# Only after tests/preflight and explicit readiness for CPU FGO:
+python -u experiments/isj_supplement/run_dev_lidar_rot_sigma_ablation.py \
+  --stage fgo > logs/isj_dev_lidar_rot_sigma_fgo.log 2>&1
+echo "ROT_SIGMA_FGO_EXIT=$?"
+tail -n 100 logs/isj_dev_lidar_rot_sigma_fgo.log
+~~~
+
+Stop criteria:
+- If original rotation confidence is not harming 0027 fixed-FGO
+  under equal convergence, rotation decomposition is not yet
+  empirically justified.
+- If reduced LiDAR rotation weight improves metrics, that is
+  preliminary *evidence of overconfident rotation constraints*,
+  NOT proof that learning dynamic rotation uncertainty will help.
+- Full new method requires sensor-available predictive rotation
+  reliability, control of correlation with Camera, strength-matched
+  static baselines, multi-sequence independent checks and honest
+  OXTS-based reference limitations.
