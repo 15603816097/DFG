@@ -1029,3 +1029,56 @@ OXTS/GPS-shared reference; it does not establish ISJ-level generalization.
 For new 0020, freeze the protocol and run full preprocessing+inference+
 H3 comparison before looking at sequence performance. Do not tune using
 the new sequence and relabel it held-out.
+
+
+### J. Cross-date conventional residual reweighting: first publication decision gate
+
+The previously implemented conventional \`adaptive_fg_common.build_factor_graph\`
+already supplies a **one-step residual-based covariance inflation** baseline,
+but the old runner was restricted to same-date Stage-7 outputs. The new
+\`run_cross_date_residual_baseline.py\` uses the *same* frozen Stage-7 factors,
+fixed LiDAR covariances and first-stage Fixed FGO poses on the isolated
+cross-date experiment. It offers GPS-only and GPS/IMU/Camera reweighting.
+
+On the **already-inspected exploratory** 0016 sequence, run:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_residual_baseline.py \
+  tests/test_isj_cross_date_runner.py -v
+
+python -u experiments/isj_supplement/run_cross_date_residual_baseline.py \
+  --sequence 2011_09_30_drive_0016_sync --stage fgo --mode both
+
+python -u experiments/isj_supplement/run_cross_date_residual_baseline.py \
+  --sequence 2011_09_30_drive_0016_sync --stage converge --mode both \
+  --max-extra-passes 4
+~~~
+
+New results only:
+\`results/isj_cross_date/<seq>/factor_graph/ISJ_RESADAPT_GPS/\`,
+\`.../ISJ_RESADAPT_GPS_IMU_CAMERA/\` and
+\`.../ISJ_CONVERGENCE_ISJ_RESADAPT_*/\`.
+The frozen fixed, GRU, Mamba, and matched-warmup reliability-only outputs
+are not touched; existing baseline result directories fail closed on
+metadata mismatch. FGO and convergence stage summaries have their own
+CSV files. Both stages can reuse consistent, complete cached results.
+
+**Important:** this is **not** a robust Huber/Cauchy GTSAM loss or
+a causal online correction. The fixed-stage poses come from the entire
+input sequence and the same measurements; the baseline only inflates
+selected Gaussian factor sigmas based on stage-one residuals once.
+It is a relevant traditional **two-stage** baseline, not an independent
+ground-truth validation. The 0016 dataset was already used for model
+analysis; its result is a decision/diagnostic gate only. Do not tune or
+select the proposed method on 0016 and then label it held-out.
+
+Before a credible ISJ submission, compare the candidate against this
+baseline, frozen and warmup-matched GRU/Mamba reliability-only, and
+appropriately implemented conventional robust-kernel FGO, across
+multiple newly obtained KITTI drives under a prospectively frozen protocol.
+All methods need consistent graph topology, initialization, optimization
+stopping/convergence checks, and synthetic-fault seeds. Explain that
+GPS/OXTS reference and corrupted GPS input share their source.
