@@ -139,16 +139,23 @@ def load_model(model: str, sensor: str, device):
         if not path.is_file():
             raise FileNotFoundError(path)
         ck = torch.load(path, map_location="cpu", weights_only=False)
-        m = ReliabilityUncertaintyV5(
-            int(ck["input_dim"]), int(ck["hidden_dim"]),
-            int(ck["layers"]), float(ck["dropout"]), int(ck["horizon"])
-        )
-        if ck.get("backend") != "gru" or m.backend != "gru":
+        if ck.get("backend") != "gru":
             raise RuntimeError(
-                "The frozen V5 checkpoint uses GRU but current Python "
-                "backend did not instantiate GRU. Run V5 in the original "
-                "GRU environment without mamba_ssm; do not substitute weights."
+                "Refusing to evaluate non-GRU frozen checkpoint as GRU"
             )
+        # The V5 class dynamically selects Mamba whenever mamba_ssm imports.
+        # Force ONLY the original GRU architecture for this original
+        # backend='gru' checkpoint even if a Mamba package is installed.
+        # This changes no weights, logits, or learned normalization.
+        import experiments.uncertainty_v5.reliability_uncertainty_model_v5 as v5mod
+        from unittest.mock import patch
+        with patch.object(v5mod, "HAS_MAMBA", False):
+            m = ReliabilityUncertaintyV5(
+                int(ck["input_dim"]), int(ck["hidden_dim"]),
+                int(ck["layers"]), float(ck["dropout"]), int(ck["horizon"])
+            )
+        if m.backend != "gru":
+            raise RuntimeError("Failed to instantiate frozen V5 GRU backend")
         m.load_state_dict(ck["state_dict"], strict=True)
         mean = np.asarray(ck["mean"], np.float32).reshape(-1)
         scale = np.asarray(ck["std"], np.float32).reshape(-1)
