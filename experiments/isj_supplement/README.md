@@ -2048,3 +2048,82 @@ Stop criteria:
   reliability, control of correlation with Camera, strength-matched
   static baselines, multi-sequence independent checks and honest
   OXTS-based reference limitations.
+
+
+### AA. Completed fixed-LiDAR rotation sigma FGO pilot on 0027; uniform convergence next
+
+User ran \`run_dev_lidar_rot_sigma_ablation.py\` on the **0027
+development drive**, with five unit tests passing, read-only
+preflight successful, FGO exit code zero. All 4 cases had
+**18092 factors**, same frozen GPS/IMU/Camera and LiDAR translation
+sigma, identical Stage-6 LiDAR initialization and initial 100-LM
+stopping configuration. Original fixed FGO ATE3D was reproduced
+at **2.456340220977 m**.
+
+| Fixed LiDAR rotation σ (rad) | ATE3D (m) | ATE2D (m) | ZRMSE (m) |
+|---:|---:|---:|---:|
+| .012857142857 (original) | 2.456340 | 2.374576 | **.628487** |
+| .040000 (Camera scale) | 2.490096 | **2.284889** | .989879 |
+| .100000 | 2.480971 | 2.392186 | .657772 |
+| .400000 | **2.429492** | 2.318908 | .724634 |
+
+The best development 3D change is **-0.026849m / ~1.09%**
+at 0.4rad, but ATE3D is non-monotonic with sigma; the
+0.04rad case improves planar ATE while worsening z and
+full 3D ATE. This is NOT evidence that LiDAR should always be
+downweighted, nor a new algorithm. These numbers were produced
+after only one 100-iteration LM solve with UNKNOWN comparative
+stationarity; they are exploratory and may change on
+uniform continuation.
+
+New \`run_dev_lidar_rot_sigma_convergence.py\` **reuses the exact
+Stage-6 factor graph construction** by invoking existing
+\`s6.run_case\` with ONLY three scoped in-memory patches:
+1. Stage-6 output path isolated to
+   \`results/isj_dev_lidar_rot_sigma_convergence_v1\`;
+2. corresponding fixed \`s6.LIDAR_R0\` matching its original
+   pilot saved pose case;
+3. LM solver factory to start from that case's **saved
+   100-iteration solution**, not restart from the original
+   pose initializer, and continue under the same predeclared
+   stopping test for each case.
+
+**Stop** when both relative weighted objective decrease
+<=1e-7 AND interpass position shift RMSE <=1mm; maximum
+4 extra passes of up to 100 LM iterations each. Stopping
+criteria **do not use ground truth or ATE**. The script computes
+ATE3D/ATE2D/ZRMSE and 1/10/20-frame translational RPE against
+the OXTS/GPS-derived local reference **for post-hoc evaluation**,
+with strict saved source manifest/shape verification and
+new-output cache protection. Different covariance graphs have
+different objective scales: compare stationarity separately,
+NEVER compare the absolute graph objectives as a method score.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest \
+  tests/test_isj_dev_lidar_rot_sigma_convergence.py \
+  tests/test_isj_dev_lidar_rot_sigma_ablation.py -v
+echo "ROT_CONVERGENCE_TEST_EXIT=$?"
+# Read-only check of all 4 existing pilot manifests and saved poses:
+python -u experiments/isj_supplement/run_dev_lidar_rot_sigma_convergence.py \
+  --stage audit
+echo "ROT_CONVERGENCE_AUDIT_EXIT=$?"
+# Only after both previous commands succeed:
+mkdir -p logs
+python -u experiments/isj_supplement/run_dev_lidar_rot_sigma_convergence.py \
+  --stage converge > logs/isj_dev_lidar_rot_sigma_convergence.log 2>&1
+echo "ROT_CONVERGENCE_EXIT=$?"
+tail -n 100 logs/isj_dev_lidar_rot_sigma_convergence.log
+~~~
+
+This is a *post-hoc numerical control* only. If all four
+stationary, compare the resulting 3D, 2D, Z and RPE metrics
+without changing their declared sigma values. If any case
+is NOT_STABLE, don't make a ranking. No 0016/0020 access,
+no checkpoint edits, no changes to the previous pilot outputs.
