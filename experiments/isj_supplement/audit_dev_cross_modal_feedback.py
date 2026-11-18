@@ -35,6 +35,7 @@ MODELS = {
 }
 NOMINAL = CrossModalSettings()
 CAL = CalibrationSettings()  # declared k=2, warmup=63; NO tuning on 0016.
+HORIZON = 3  # Both original V5 and V6 training datasets leave last H-1 frames unpredicted.
 
 
 def pick(z, *names):
@@ -135,6 +136,11 @@ def main():
             if key in z.files:
                 sev[sensor] = np.asarray(z[key], dtype=float).reshape(-1)
     n = len(gps)
+    valid_end = n - HORIZON + 1  # exclusive, reproduces V5/V6 training sample coverage
+    if valid_end <= CAL.expected_warmup:
+        raise ValueError("Development sequence shorter than prediction window/horizon")
+    evalmask = np.zeros(n, dtype=bool)
+    evalmask[CAL.expected_warmup:valid_end] = True
     with np.load(lidar_path, allow_pickle=False) as z:
         between = np.asarray(pick(z, "body_between", "between_measurements"), float)
         valid = np.asarray(pick(z, "converged", "valid"), bool).reshape(-1)
@@ -163,7 +169,10 @@ def main():
 
     print("="*104)
     print("DEVELOPMENT-ONLY READ-ONLY GPS/IMU CROSS-MODAL FEEDBACK DIAGNOSTIC")
-    print(f"0027 frames={n}, valid model output starts at frame={CAL.expected_warmup}")
+    print(f"0027 frames={n}, valid prediction frames="
+          f"{CAL.expected_warmup}..{valid_end-1} ({int(evalmask.sum())} frames)")
+    print(f"Last {HORIZON-1} frames excluded because BOTH frozen predictors "
+          "leave tail placeholders; original files remain untouched")
     print(f"GPS window={NOMINAL.gps_window}, GPS scalar chi2(1)95={NOMINAL.gps_chi2_95:.4f}")
     print(f"IMU chi2(3)95={NOMINAL.imu_chi2_95:.4f}, beta pseudo_count={CAL.pseudo_count}")
     print("NO ground truth / clean GPS / oracle used in feedback construction")
@@ -174,13 +183,13 @@ def main():
     for sensor in SENSORS:
         q = feedback[f"{sensor}_quality"]
         mask = feedback[f"{sensor}_valid"].copy()
-        mask[:CAL.expected_warmup] = False
+        mask &= evalmask
         count = int(mask.sum())
         if count == 0:
             raise ValueError(f"{sensor}: no valid aligned cross-modal observations")
         print(f"\n--- {sensor.upper()} cross-modal consistency ---")
-        print(f"feedback support={count}/{n-CAL.expected_warmup} "
-              f"({count/max(1,n-CAL.expected_warmup):.2%})")
+        print(f"feedback support={count}/{int(evalmask.sum())} "
+              f"({count/max(1,int(evalmask.sum())):.2%})")
         print(describe("NIS", feedback[f"{sensor}_nis"][mask]))
         print(describe("feedback q", q[mask]))
         print(f"q<1 fraction={np.mean(q[mask]<1-1e-7):.4%}; "
@@ -198,8 +207,12 @@ def main():
             u = np.asarray(np.loadtxt(up), dtype=float).reshape(-1)
             if len(r) != n or len(u) != n:
                 raise ValueError(f"{name}/{sensor}: prediction length mismatch")
+            print(
+                f"{name:5s} excluded tail values: "
+                f"r={np.array2string(r[valid_end:], precision=5)} "
+                f"U={np.array2string(u[valid_end:], precision=5)}"
+            )
             t = reference[sensor]
-            evalmask = np.arange(n) >= CAL.expected_warmup
             integrity = beta_pair_integrity(r, u, evalmask)
             print(
                 f"{name:5s} Beta pair audit: "
