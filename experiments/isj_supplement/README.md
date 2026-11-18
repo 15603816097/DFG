@@ -1915,3 +1915,60 @@ Untouched 0020 stays for future prospective external test. 0016
 is exploratory and may not be called a clean test. Do not use
 post-hoc OXTS references to make model gating decisions, and
 do not claim FGO gains without a fair convergence-controlled FGO.
+
+
+### Y. 0027 OXTS raw-path resilience (2026-11-18)
+
+After removing the rejected GPS-negative-evidence pilot from the
+active branch (archived at
+\`archive-neg-gps-gate-before-cleanup-20261118\`), the user
+confirmed **23/23** current tests passed and there were no remaining
+Python imports of the removed module. The existing source-specific
+rotation audit originally exited 1 because the **default 0027
+\`oxts/data/\` folder contained zero OXTS text files**.
+This is a **missing reference path/data**, NOT a failed SO(3)
+estimation experiment.
+
+\`audit_dev_lidar_rotation_reference.py\` now accepts:
+- \`--reference auto\` (DEFAULT): if raw original 0027 OXTS exists,
+  compare both relative rotations to it; otherwise, **fall back to
+  LiDAR-vs-Camera relative comparison ONLY**, emitting a prominent
+  no-independent-truth warning. Does not construct fake OXTS data.
+- \`--reference camera\`: run the pairwise LiDAR/Camera comparison
+  only even if OXTS exists.
+- \`--reference oxts\`: strict 0027 original OXTS required; fail
+  if not available. Use \`--sequence-dir /absolute/path/
+  2011_10_03_drive_0027_sync\` if the raw 0027 drive is stored
+  somewhere other than the default repo dataset path. Identity
+  must match 0027 and frame names must match 0..4543 exactly.
+
+Commands:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_lidar_rotation_reference.py -v
+echo "ROT_TEST_EXIT=$?"
+# Only if tests pass:
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_lidar_rotation_reference.py \
+  --reference auto > logs/isj_dev_lidar_rotation_reference.log 2>&1
+echo "ROT_AUDIT_EXIT=$?"
+cat logs/isj_dev_lidar_rotation_reference.log
+
+# OPTIONAL read-only search for misplaced original 0027 raw drive:
+find /root/projects/DFG /data /mnt /home/vipuser \
+  -type d -name '2011_10_03_drive_0027_sync' -print 2>/dev/null
+# If the actual OXTS raw folder exists elsewhere, explicitly pass its
+# parent 0027 sequence directory via --sequence-dir with --reference oxts.
+~~~
+
+CAUTION: when raw OXTS is unavailable, pairwise disagreement alone
+does not identify which sensor is wrong. Never call Camera ground
+truth. Never delete untracked \`external/\`, \`logs/\` or \`results/\`
+as a blanket cleanup operation, since these can contain unique raw
+data and experimental evidence. Preserve the prospective 0020 drive.
