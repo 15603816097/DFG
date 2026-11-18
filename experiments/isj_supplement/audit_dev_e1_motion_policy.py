@@ -57,8 +57,15 @@ def collect(m):
         "camera_quality":m.camera_quality,
     }
     for policy in POLICIES:
+        # Match the positional process-variance proxy across all motion
+        # policies, so covariance/GPS update gain does not confound the
+        # orientation/odometry-source diagnostic. This is NOT a sensor
+        # noise calibration or a deployable configuration.
         outs[policy]=causal_position_innovation(
-            **args,settings=replace(cfg,motion_policy=policy)
+            **args,settings=replace(
+                cfg,motion_policy=policy,
+                camera_step_sigma_m=cfg.lidar_step_sigma_m,
+            )
         )
     # Reference old measurement discrepancy is built from noisy
     # measurements only. No clean GPS or synthetic labels in here.
@@ -115,6 +122,7 @@ def main():
     print("All policies evaluated on SAME matched frames; yaw bootstrap from first 63 DEGRADED GPS")
     print("Current-frame GPS never used in its own prior; original OXTS/GPS used for label ONLY")
     print("AUC labels mean synthetic injection>=5m, not independent real GNSS fault")
+    print("ALL motion policies use equal 0.15m per-step position variance proxy")
     print("Heuristic normalizer is NOT calibrated NIS; no parameters tuned")
     print("Only 0027 touched. 0016/0020 excluded. No files written.")
     print(f"n={n} matched={common.sum()} "
