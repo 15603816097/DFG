@@ -180,21 +180,6 @@ def control_predictions(original_pred, spec: dict, audit: list | None = None):
     return wrapped
 
 
-def read_stats(seq: str, specs: list[dict]) -> list[dict]:
-    import experiments.cross_sequence.run_stage7_factor_graph as s7
-    rows = []
-    for spec in specs:
-        for sensor in SENSORS:
-            r, u = s7.pred(seq, spec["source"], sensor,
-                           num_frames_from_frozen(seq, s7))
-            _, metrics = beta_valid_swap_uncertainty(
-                r, u, seed=spec["seed"],
-                source=spec["source"], sensor=sensor
-            )
-            rows.append(metrics)
-    return rows
-
-
 def num_frames_from_frozen(seq: str, s7) -> int:
     return len(s7.load_measurements(seq).gps_local)
 
@@ -295,14 +280,14 @@ def run_fgo(seq: str, out: Path, models: tuple[str, ...],
                 "seed": spec["seed"],
                 "ATE3D_m": ate,
                 "vs_fixed_pct": 100.0 * (fixed_ate - ate) / fixed_ate,
-                "status": status,
             })
             print(f"{name:<43} ATE3D={ate:.6f} m ({status})", flush=True)
 
-    path = out / "isj_cross_date_beta_swap_fgo.csv"
     # It is possible to first run one model and later both; avoid replacing
     # the CSV in this case by distinguishing models and predeclared seeds.
-    label = "_".join(models) + "_" + "_".join(map(str, [s["seed"] for s in specs]))
+    label = "_".join(models) + "_" + "_".join(
+        str(seed) for seed in sorted({spec["seed"] for spec in specs})
+    )
     path = out / f"isj_cross_date_beta_swap_fgo_{label}.csv"
     write_new_summary(path, rows)
     save_protocol(out / f"isj_cross_date_beta_swap_fgo_protocol_{label}.json", {
@@ -349,7 +334,9 @@ def run_converge(seq: str, out: Path, models: tuple[str, ...],
               f'{row["source_ATE3D"]:.6f} -> {row["continued_ATE3D"]:.6f}m '
               f'{"STABLE" if row["stationary_under_rule"] else "NOT_STABLE"}',
               flush=True)
-    label = "_".join(models) + "_" + "_".join(map(str, [s["seed"] for s in specs]))
+    label = "_".join(models) + "_" + "_".join(
+        str(seed) for seed in sorted({spec["seed"] for spec in specs})
+    )
     write_new_summary(
         out / f"isj_cross_date_beta_swap_convergence_{label}.csv", rows
     )
