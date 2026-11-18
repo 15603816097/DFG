@@ -1236,3 +1236,67 @@ cross-sensor residual construction and development-only factor-graph
 integration, with reliability-only and feedback-only controls. Never
 use test GT to calculate weights. No new 0016 tuning; prospectively
 select multiple new KITTI sequences for independent validation.
+
+
+### N. Development-only GPS/IMU cross-modal feedback sanity check (no FGO)
+
+All 25/25 original 0027 development artifacts were confirmed present on
+the server, and the evidence calibration and robust-kernel unit tests passed
+10/10. The next *engineering* check is the crucial previously missing
+feedback observation signal: consistency between degraded GPS/IMU and the
+physical LiDAR relative odometry, without any use of OXTS ground truth,
+clean GPS, oracle reliability labels or first-stage fixed graph poses in
+the generation of the feedback itself.
+
+\`src/reliability/cross_modal_consistency.py\` computes:
+* GPS: compare length of displacement over the previous **5** frame gaps
+  with the length of the chained relative LiDAR displacement over the
+  same interval. This orientation-free heuristic does **NOT** detect
+  every directional error, a constant offset, or slowly drifting bias.
+* IMU: for pair \`t-1 -> t\`, compare gyro-integrated SO(3) rotation with
+  the corresponding LiDAR between-factor rotation, publishing quality at
+  **target frame t**. No spurious frame t-1/t shift.
+* Both convert a squared normalized discrepancy to a monotone quality
+  score using predeclared chi-square 95% cutoffs; use frozen Stage-7
+  nominal sigmas as an **approximation**, not true calibrated innovation
+  covariance. A validated LiDAR pair is required. Masked records must
+  contribute **no** Beta feedback, even though q is set to a harmless
+  unit placeholder in those records.
+
+\`experiments/isj_supplement/audit_dev_cross_modal_feedback.py\` runs
+this construction on 2011_10_03_drive_0027_sync degraded GPS/IMU and
+the existing physical LiDAR factors, then applies the already-added
+Beta soft-count update to the **frozen** GRU/Mamba reliability and
+uncertainty arrays. It prints coverage, NIS and q distributions, fraction
+of nontrivial feedback, r delta, and descriptive (not independent)
+agreement with V3 labels. V3 labels and synthetic severity are read
+**only after feedback creation**, and used strictly for diagnostics.
+Neither prediction source nor dataset is trained or changed here.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest \
+    tests/test_isj_cross_modal_consistency.py \
+    tests/test_isj_evidence_feedback_calibration.py -v
+python -u experiments/isj_supplement/audit_dev_cross_modal_feedback.py
+~~~
+
+This **prints only, never writes files**, and does not run GTSAM,
+train models, or evaluate on repeatedly inspected 0016. The repo
+code has not been executed on the user's server: run tests first and
+inspect any shape/key errors before integration. If feedback coverage,
+validity or variation is inadequate, do not claim an innovation; first
+correct the measurement-only consistency mechanism on development data.
+The V6 training-data lineage is still unverified; the 0027 predictions
+are from a sequence used for training and cannot support final held-out
+accuracy claims.
+
+The next stage, only if the above sanity audit succeeds, is a fresh,
+isolated development 0027 FGO with four identical sensor factors and
+four predeclared ablations: reliability-only, feedback-only,
+reliability+feedback without U, and Beta-guided reliability+feedback.
+No tuning on 0016 or newly held-out drives, and no rewriting historical
+Stage-6/Stage-7 outputs. Validate initialization, reference alignment
+and solver convergence on each new case before comparing ATE.
