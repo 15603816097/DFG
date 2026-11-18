@@ -169,7 +169,10 @@ def run_fgo(seq: str, out: Path, models: tuple[str, ...],
             })
             print(f"{name:<43} ATE3D={ate:.6f} m ({status})", flush=True)
 
-    path = out / "isj_cross_date_controls_fgo.csv"
+    path = out / ("isj_cross_date_controls_fgo_" + "_".join(
+        sorted({spec["source"] for spec in specs})
+    ) + "_" + ("all" if {spec["mode"] for spec in specs} ==
+               {"constant_mean", "permuted"} else specs[0]["mode"]) + ".csv")
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
@@ -253,7 +256,10 @@ def run_convergence(seq: str, out: Path, models: tuple[str, ...],
               f"{row['source_ATE3D']:.6f} -> {row['continued_ATE3D']:.6f} m "
               f"{stable}", flush=True)
 
-    path = out / "isj_cross_date_controls_convergence.csv"
+    path = out / ("isj_cross_date_controls_convergence_" + "_".join(
+        sorted({spec["source"] for spec in specs})
+    ) + "_" + ("all" if {spec["mode"] for spec in specs} ==
+               {"constant_mean", "permuted"} else specs[0]["mode"]) + ".csv")
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
