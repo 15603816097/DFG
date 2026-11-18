@@ -1707,3 +1707,66 @@ If neither model supports additive value, keep results as
 negative findings and reconsider the novelty target. Both
 the early 0027 segment and its later segments have been repeatedly
 examined, so no result is an independent external test.
+
+
+### U. E2A result and next geometry-only sanity audit (0027 development only)
+
+Completed E2A \`audit_dev_gps_u_feedback_complementarity.py\` on the
+user's 0027 server: pytest **4/4 PASS**, exit 0. All logistic
+models were fitted on 0027's original model-specific TRAIN segment
+and then evaluated on VAL/TEST without refitting.
+
+| Backbone | Split | R+D AUC | R+D+U AUC | U addition |
+|---|---|---:|---:|---:|
+| GRU | VAL | .9365 | .9357 | -.0008 |
+| GRU | TEST | .9357 | .9351 | -.0006 |
+| Mamba | VAL | .9228 | .9236 | +.0008 |
+| Mamba | TEST | .9464 | .9470 | +.0006 |
+
+The added U signal was **not consistently helpful** at detecting
+injected GPS faults beyond R+D on this in-drive experiment. In the
+most risky 1-r TEST quartile, stand-alone conditional fault AUROC(U)
+was **0.2160** GRU / **0.2127** Mamba. AUC(U) around .87-.88
+from a DIFFERENT experiment measures *error in the learned r
+prediction relative to a weak FGO-derived label*, not the physical
+synthetic GPS fault event >=5m. Do not conflate these targets.
+R-only GPS synthetic fault AUC itself was .9297 GRU/.9437 Mamba
+on model-internal TEST; value remains in-sample/development and
+does not imply good generalization.
+
+**Stop rule triggered**: do not design an arbitrary new U
+pseudo-count or threshold to force positive results, and do not
+go to Stage FGO yet. First diagnose the old E1's mean 62m
+GPS innovation. New read-only
+\`audit_dev_odometry_geometry.py\` compares the existing physical
+LiDAR and camera body-frame between measurements at k=1,5,20,63
+frames against original OXTS/GPS-derived *clean* displacement
+strictly as a post-hoc diagnostic reference, not a sensor-independent
+ground truth or a method input. It prints mean/p95 length error
+(rotation-invariant), mean/p95 vector error after the original
+63-frame noisy-GPS yaw bootstrap, and median XY heading mismatch.
+Large length error indicates odometry translation scale/magnitude
+error; small length error with large vector error indicates rotation,
+frame alignment, heading or accumulated angular drift. This
+diagnostic **does not fix** the causal filter and does not prove a
+new contribution.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_odometry_geometry.py -v
+echo "GEOM_TEST_EXIT=$?"
+# Run only if tests pass:
+python -u experiments/isj_supplement/audit_dev_odometry_geometry.py \
+  > logs/isj_dev_odometry_geometry.log 2>&1
+echo "GEOM_AUDIT_EXIT=$?"
+cat logs/isj_dev_odometry_geometry.log
+~~~
+
+Existing experimental outputs preserved, prospective 0020 not read.
+Do not infer publication-ready method improvements from diagnostic
+AUCs on already explored 0027.
