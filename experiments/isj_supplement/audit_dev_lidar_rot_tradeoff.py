@@ -124,7 +124,7 @@ def tabulate(label,poses,gt,frames,rpe_starts):
         print(f"\n{label}: NO FRAMES")
         return
     print(f"\n{label} | n_positions={len(frames)} "
-          f"n_adjacent={len(rpe_starts)}")
+          + " ".join(f"n_RPE_k{k}={len(v)}" for k,v in rpe_starts.items()))
     for name,_ in conv.pilot.SPECS:
         ate3,ate2,z=position_metrics(poses[name],gt,frames)
         rs=[]
