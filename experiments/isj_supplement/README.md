@@ -1484,3 +1484,82 @@ drive/date (e.g. 2011_09_26) rather than treating two drives from
 must disclose KITTI OXTS/GPS reference non-independence and synthetic
 corruptions. Neither artifact upload nor this read-only preview
 constitutes having run any held-out FGO experiment.
+
+
+### R. 0020 installed and READY_RAW; development-only GPS negative evidence pilot
+
+The user installed the previously uploaded KITTI
+\`2011_09_30_drive_0020_sync.zip\` through the safe installer (4/4
+installer tests passed). All OXTS/LiDAR/left-camera/right-camera
+streams have exactly **1104** frames and matching timestamps; date
+2011_09_30's own three calibrations are present; cross-date
+\`--stage inspect\` returned **READY_RAW**. This checks filesystem layout,
+not full sensor calibration validity or statistical test independence.
+Hold 0020 aside: do not tune the method against 0020's ATE.
+
+The existing 0027 internal temporal split check showed GPS U AUC
+0.8729 (GRU) and 0.8793 (Mamba) for identifying highest-20%
+reliability prediction errors, while Mamba IMU AUC was only 0.6287.
+The prior bidirectional Beta pseudo-observation update **failed**
+on 0027. New conservative candidate:
+\`src/reliability/gps_negative_evidence_gate.py\`, using
+\`r' = 2*r/(2 + k*U*(1-q))\`, with **only** negative feedback:
+q=1 means **no update**, not an increase in reliability. k=2 is
+already declared. The controls are reliability-only (r), no-U
+(U replaced by a constant 0.5) and with-U (model Beta U). All changes
+are restricted to GPS; IMU/Camera use frozen reliability-only and
+LiDAR uses unchanged fixed covariance.
+
+The new exploratory development driver
+\`experiments/isj_supplement/run_dev_gps_negative_evidence_fgo.py\`
+reuses **the original Stage-6 four-sensor GTSAM factor graph**
+and frozen r-only covariance mappings via temporary in-memory
+patches. Unlike a separately implemented FGO, this preserves the
+old factor definitions and noise constants. It reads 0027
+degraded measurements, physical-LiDAR relative factors, and
+frozen 0027 V5/V6 prediction TXT files. It never reads 0016 or
+0020. All output folders are fresh under
+\`results/isj_dev_gps_negative_evidence_v1/<model>/\`.
+It excludes the initial model warmup and last 2 unpredicted frames
+from all learned covariance changes by using fixed covariance
+there. The current driver uses the original Stage-6 solver's
+100 LM iterations **WITHOUT further continuation**; pilot results
+are **not yet convergence-controlled manuscript tables**.
+The GNSS/OXTS reference is neither GPS-independent nor real-fault truth.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest \
+  tests/test_isj_gps_negative_evidence_gate.py \
+  tests/test_isj_dev_gps_negative_evidence_fgo.py -v
+
+# Prints candidate GPS modifications, does not run GTSAM or write.
+python -u experiments/isj_supplement/run_dev_gps_negative_evidence_fgo.py \
+  --stage audit --model gru
+
+# Critical U information baseline compared with 1-r.
+python -u experiments/isj_supplement/audit_dev_uncertainty_risk_by_split.py
+
+# Development FGO pilot, isolated directory; does not retrain.
+python -u experiments/isj_supplement/run_dev_gps_negative_evidence_fgo.py \
+  --stage fgo --model gru
+~~~
+
+The dev pilot is an **attempt**, not a claimed successful innovation:
+on the existing 0027 signal only ~3.2% of GPS feedback samples have
+q<1, so this gate may change too few measurements to matter. Do not
+change q thresholds after looking at 0016 or 0020. Evaluate both
+GRU and Mamba only if the pilot mechanism is plausible, then add
+comparable convergence and strictly fresh cross-drive robustness
+evaluations for any positive paper claim. If the with-U case is not
+better than reliability-only and no-U, do NOT keep claiming an
+evidence-guided improvement; pivot on development data only.
+
+The U-AUC audit now prints \`AUC(U)\`, \`AUC(1-r)\` and
+\`deltaU_minus_r\` on each original train/val/test segment; U's
+additional contribution cannot be inferred from AUC(U) alone.
