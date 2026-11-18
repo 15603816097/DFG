@@ -805,3 +805,47 @@ Dynamic-U FGO solutions are untouched. Both methods' warmup factor
 weights now match within a model. This is an exploratory post-hoc pilot
 on one OXTS/GPS-linked synthetic-degradation drive, not independent GT
 or prospective validation.
+
+
+### G. Next step: READ-ONLY prediction-quality audit (do not tune on 0016)
+
+The matched-warmup Reliability Only controls outperformed original Dynamic U
+for both V5 and V6 on cross-date 2011_09_30/0016, which falsifies an
+unqualified claim that U always improves the current factor graph.
+Before changing noise-mapping parameters, evaluate what frozen r and U
+actually capture:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_cross_date_prediction_quality.py -v
+mkdir -p logs
+set +e
+set -o pipefail
+python -u experiments/isj_supplement/audit_cross_date_prediction_quality.py \
+  --sequence 2011_09_30_drive_0016_sync \
+  2>&1 | tee logs/isj_cross_date_0930_prediction_quality.log
+~~~
+
+This is a read-only analysis of saved \`sensor_data.npz\` and frozen
+\`predictions/v5\`/\`predictions/v6\` arrays; no checkpoint, FGO result,
+or noise anchor is modified. The GPS target is the exactly known injected
+synthetic position displacement, computed from saved
+\`clean_gps_local\` and \`degraded_gps_local\`. For GPS/IMU/Camera,
+the injected severity curve is used only as a SYNTHETIC PROXY, not
+the original training target \`current_factor_reliability\`.
+The audit reports Pearson/Spearman associations of severity or known GPS
+error with 1-r (predicted impairment) and with U (Beta evidential
+lack-of-evidence), plus severity-stratified statistics. Excludes the first
+63 pre-window frames.
+
+This is not formal statistical calibration: U=2/(alpha+beta) is not
+automatically measurement variance; a GPS-linked OXTS source is shared
+between corrupted GPS input and the reference; time series are
+autocorrelated, and correlations on a previously explored 279-frame
+sequence do not establish generalization. Do not select model parameters
+from this audit and then report 0016 as an untouched held-out test.
+After diagnostics, seek an unexamined cross-date drive and evaluate
+the frozen protocol prospectively, then develop any revised mapping on
+a development/validation split only.
