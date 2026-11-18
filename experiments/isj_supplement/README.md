@@ -1300,3 +1300,62 @@ reliability+feedback without U, and Beta-guided reliability+feedback.
 No tuning on 0016 or newly held-out drives, and no rewriting historical
 Stage-6/Stage-7 outputs. Validate initialization, reference alignment
 and solver convergence on each new case before comparing ATE.
+
+
+### O. Correcting a real development audit failure: unpredicted V5/V6 tail frames
+
+On 2026-11-18 the server ran the read-only development consistency audit:
+tests 10/10 passed, 0027 had 4544 frames and GPS feedback coverage
+4481/4481 when naively including all frames t>=63.
+The **first** GRU GPS run worsened reference-label MAE from 0.121978
+to 0.153665. Mean GPS feedback q=0.985697; only 3.2359% had q<1.
+This shows that the original **two-sided** Beta soft-count update,
+which pushes unreliable predictions toward 1 whenever q=1, is
+**not a validated beneficial correction**. Do not use it in FGO or
+claim positive calibration evidence. GPS speed/translation-distance
+agreement can miss constant GPS bias and directional errors.
+
+The later Mamba GPS run initially stopped with
+\`ValueError: Beta evidence invalid (alpha/beta < 1)\`.
+Source review identified a likely deterministic cause:
+\`mamba_v6/train.py\` pre-fills all r/U with **ones**, and
+\`mamba_v6/dataset.py\` trains/predicts samples only through
+\`usable_end=n-horizon+1\` exclusive, so with n=4544, horizon=3
+**frames 4542 and 4543 are still r=1,U=1 placeholders**.
+These are impossible valid BetaV6 pairs but NOT necessarily a broken
+checkpoint. V5 also leaves its last 2 frames unpredicted, with its
+own placeholders (r=0.5,U=1). The prior audit incorrectly treated
+all t>=63 as valid.
+
+The audit now scores only frames **63..4541**, excludes these
+unpredicted tail placeholders in BOTH models, and prints the excluded
+tail values. It checks the exact structural Beta r/U constraints for
+all remaining predictions and prints any invalid frame indices without
+silently clipping/editing predictions. If additional invalid genuine
+network outputs are found, the affected sensor/model calibration is
+skipped, rather than hiding potential file provenance mismatch.
+Original files and original evaluation outputs remain unchanged.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_beta_pair_integrity.py \
+    tests/test_isj_evidence_feedback_calibration.py \
+    tests/test_isj_cross_modal_consistency.py -v
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_cross_modal_feedback.py \
+    > logs/isj_dev_feedback_after_tail_mask.log 2>&1
+echo "AUDIT_EXIT=$?"
+tail -n 100 logs/isj_dev_feedback_after_tail_mask.log
+~~~
+
+This is a **data/protocol repair and hypothesis falsification**,
+not evidence that the main proposed method is now successful.
+Before final manuscript experiments, freeze a new feedback mechanism
+that treats measurement agreement as *lack of contradiction*, not as
+proof of absolute GPS reliability. Existing V6 training input provenance
+remains unconfirmed.
