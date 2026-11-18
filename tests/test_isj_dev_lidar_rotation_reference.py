@@ -60,6 +60,7 @@ def test_report_matched_pairs_and_partial_validity():
     error,inverse,yaw=report("LiDAR",l,gt,mask,n)
     assert len(error)>100
     assert len(inverse)==len(error)==len(yaw)
-    assert np.mean(yaw)==pytest.approx(.001,abs=1e-12)
+    # report() returns yaw residuals in DEGREES, not radians.
+    assert np.mean(yaw)==pytest.approx(np.degrees(.001),abs=1e-12)
     with pytest.raises(ValueError,match="too few|Too few"):
         report("LiDAR",l,gt,np.zeros(n-1,bool),n)
