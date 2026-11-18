@@ -1563,3 +1563,81 @@ evidence-guided improvement; pivot on development data only.
 The U-AUC audit now prints \`AUC(U)\`, \`AUC(1-r)\` and
 \`deltaU_minus_r\` on each original train/val/test segment; U's
 additional contribution cannot be inferred from AUC(U) alone.
+
+
+### S. E1: causal pre-update GPS 3D innovation diagnostic (next experiment)
+
+The original GPS/LiDAR **5-step displacement magnitude** feedback
+failed to improve development FGO with either frozen GRU V5 or
+frozen Mamba V6. Verified Stage-6 initial-LM ATE3D on 0027:
+
+| Backbone | r-only | No-U negative evidence | With-U negative evidence |
+| --- | ---: | ---: | ---: |
+| GRU | **2.184539 m** | 2.238903 m | 2.208585 m |
+| Mamba | **2.350710 m** | 2.642782 m | 2.382172 m |
+
+These are 0027 in-sample/development figures, without uniform
+LM continuation. Do NOT keep modifying the old distance-only gate.
+Never use raw-ready, not-yet-tested **2011_09_30_drive_0020_sync**
+to select new-method parameters. The 0016 drive is already heavily
+explored and also unsuitable as an untouched test.
+
+New E1 module \`src/reliability/causal_gps_position_innovation.py\`
+calculates **pre-update** 3D GPS innovations using previously updated
+position and only LiDAR/Camera pair odometry \`t-1->t\`. First it aligns
+the initial odometry heading against only the **past 63** degraded
+GPS frames to bootstrap a common XY world frame, using NO clean
+GPS, OXTS reference trajectory, future measurements or FGO optimized
+pose. It records each innovation **before** the current GPS position
+update; current GPS affects only *future* priors. The update uses fixed
+5 m GPS observation scale, simple process-variance proxy and bounded
+position correction, which are NOT a proper 6DoF EKF covariance or
+probabilistically calibrated NIS. Persistent GPS bias can still be
+absorbed by state updates, and historical GPS heading bootstrap may
+be distorted by faults. LiDAR is first-choice relative odometry,
+Camera is fallback. A separate LiDAR/Camera pair disagreement mask
+helps identify cases in which a large GPS innovation could instead
+be due to unreliable geometry.
+
+New \`experiments/isj_supplement/audit_dev_causal_gps_innovation_e1.py\`
+uses ONLY 0027. After computing the innovations, it reads
+\`clean_gps_local\` from the existing degraded 0027 input **strictly
+for diagnostics** to label injected GPS error >= **5m**. Original
+OXTS GPS is NOT an independent reference or real-world fault label.
+It compares same-frame AUROC, descriptive TPR and observed FPR
+for (1) new 3D innovation norm, (2) new norm divided by a rough
+scale proxy, and (3) old magnitude-difference NIS. It reports
+geometric agreement/conflict subsets, valid support and simulated
+GPS severity correlation. The negative-class 95th-percentile
+threshold shown is **only** a descriptive developer-data operating
+point; NOT a tuned deployable or externally validated threshold.
+The evaluation supports making the next design decision but cannot
+by itself justify an ISJ contribution.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest \
+  tests/test_isj_causal_gps_position_innovation.py \
+  tests/test_isj_cross_modal_consistency.py -v
+echo "E1_TEST_EXIT=$?"
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_causal_gps_innovation_e1.py \
+  > logs/isj_e1_dev_causal_gps_innovation.log 2>&1
+echo "E1_AUDIT_EXIT=$?"
+tail -n 100 logs/isj_e1_dev_causal_gps_innovation.log
+~~~
+
+No FGO, no checkpoint inference/training, no files modified by
+E1 itself, no 0016/0020 access. Unit tests check specifically that
+GPS[t] changes the pre-update **innovation** at t but cannot change
+the **predicted position** at t (only later predictions may change).
+If E1 does not beat the old norm-only score in fault detection,
+or geometry conflict causes many false alarms, do not integrate
+an E2 adaptive covariance algorithm; analyze/repair E1 on the 0027
+development sequence. Parameter changes must be recorded and must
+precede the prospective 0020 evaluation.
