@@ -1828,3 +1828,75 @@ historical (no future/clean-GT) information. If signed error
 changes substantially by quarter, investigate SO(3) propagation
 and odometry rotational drift. Do not immediately invent a new
 U factor mapping or run FGO until geometry is understood.
+
+
+### W. Confirmed 0027 signed heading: LiDAR accumulates yaw error; Camera stable
+
+User completed \`audit_dev_signed_heading.py\`: pytest 4/4, exit 0.
+Source-specific separate historical yaw and SO(3) propagation gave:
+- **LiDAR** yaw signed circular mean by chronological Q1..Q4:
+  **-6.02, -19.02, -39.96, -53.88 deg**;
+  k=20 globally aligned vector MAE **8.566 m**.
+- **Camera** signed circular mean:
+  **+2.01, +0.49, +0.62, +2.27 deg**;
+  k=20 vector MAE **0.961 m**.
+- LiDAR norm errors remain much smaller than vector errors, and
+  Camera's frame-specific yaw remains approximately stable.
+
+This strongly indicates a cumulative LiDAR rotation/alignment
+problem that corrupted the old E1 prior (62m mean GPS innovation,
+synthetic-fault AUROC 0.6006). It does **not** establish which of
+LiDAR ICP, body-frame calibration, time alignment or motion
+convention caused drift, nor establish a real-world fault detector.
+Any whole-drive OXTS 'oracle rotation' uses future reference and
+cannot be used for method inputs.
+
+New controlled **read-only E1 motion source ablation**:
+\`src/reliability/causal_gps_position_innovation.py\` now accepts
+\`CausalInnovationSettings(motion_policy=...)\`, preserving the
+original default \`lidar_first\`. Alternative modes are
+\`camera_first\` and
+\`camera_rotation_lidar_translation\` (hybrid only when both
+physically valid; else fallback). The code applies the source
+policy also in the historical 63-frame bootstrap, **never** uses
+current GPS in current prior, and preserves the original physical
+LiDAR/Camera geometry disagreement score.
+
+\`audit_dev_e1_motion_policy.py\` compares all three on identical
+matched frames of 0027, same noisy GPS, same historical yaw protocol,
+same input/mask, and common position process-noise proxy (both
+sensor sources use 0.15 m per step for this *diagnostic*), holding
+the simple causal GPS update fixed. Label is existing injected
+GPS error >=5m against original OXTS/GPS, read only after prior
+construction. Prints mean/p95 raw innovations, AUC and descriptive
+development-only TPR at negative-class 95th-percentile, plus
+chronological quartiles. The old 5-step GPS/LiDAR raw
+displacement discrepancy is the strong comparison benchmark.
+No learned model, FGO, independent truth or 0020/0016.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest \
+  tests/test_isj_causal_gps_position_innovation.py \
+  tests/test_isj_dev_e1_motion_policy.py -v
+echo "E1_POLICY_TEST_EXIT=$?"
+# Only if tests all pass:
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_e1_motion_policy.py \
+  > logs/isj_dev_e1_motion_policy.log 2>&1
+echo "E1_POLICY_EXIT=$?"
+cat logs/isj_dev_e1_motion_policy.log
+~~~
+
+This is a controlled **root-cause diagnostic**, not a new paper
+method. If Camera or hybrid reduces E1 innovation mean from 62m
+and improves AUC, continue validating measurement/prior errors
+and feedback false positives before designing FGO. If not,
+investigate state-update/gain behavior and alternative sources
+of absolute reference drift; do not arbitrarily tune thresholds.
+Preserve all previous E1 and FGO outputs.
