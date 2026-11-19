@@ -2471,3 +2471,55 @@ generalization. No 0016/0020 testing until a
 method is frozen. Avoid tuning this calibrator
 based on TEST scores; it is a single predeclared
 read-only comparison.
+
+
+### AG. Conditional evidential-U value on identical 0027 VAL -> TEST frames (2026-11-19)
+
+User installed scikit-learn 1.9.1 in `dfg-isj`; the **eight
+tests all PASSED (none skipped)** and `--conditional`
+audit exit=0. Both L2-logistic risk calibrators are fit
+ONLY on common 0027 VAL [3180,3860), assessed on
+common TEST [3862,4542). Model-specific high absolute
+reliability-prediction-error thresholds were fixed using
+the respective VAL prediction error 80th percentile.
+Hence each model's TEST risk labels/positive rates differ,
+so comparing their AUCs as if the same fault outcome
+would be invalid. Models are evaluated on matched frame
+numbers, not identical binary risk targets.
+
+| Sensor | Model | TEST positive | AUC(r) | AUC(r+U) | deltaAUC | Brier gain | LogLoss gain |
+|---|---|---:|---:|---:|---:|---:|---:|
+| GPS | GRU V5 | 20.59% | .8616 | .8743 | +.0127 | +.01326 | +.03867 |
+| GPS | Mamba V6 | 17.06% | .8092 | .8779 | **+.0688** | **+.02784** | **+.07396** |
+| IMU | GRU V5 | 44.26% | .7004 | .6992 | -.0012 | -.00129 | -.00898 |
+| IMU | Mamba V6 | 51.76% | .5676 | .5694 | +.0018 | -.00497 | -.02522 |
+| Camera | GRU V5 | 29.41% | .7376 | .7378 | +.0002 | +.00063 | +.00225 |
+| Camera | Mamba V6 | 14.26% | .6896 | .6899 | +.0003 | -.00014 | -.00063 |
+
+GPS Mamba paired 32-frame moving-block bootstrap 95% CI
+of AUC difference was **[-.00174,+.16293]**, which
+**crosses zero**. GPS GRU CI [-.02811,+.06466]
+also crosses zero. Camera GRU's tiny positive .0002
+AUC increment is not meaningful evidence of a usable
+new uncertainty method, even if its block CI excludes
+zero under the selected resampling protocol.
+
+**Conclusion:** Mamba GPS `U` is a promising *conditional
+predictor* of error against the **non-independent 0027
+FGO-derived reliability proxy** and produces positive
+Brier/log-loss changes in this pilot. This is neither
+statistically robust proof of added risk ranking nor an
+independent sensor fault label nor evidence of improving
+ATE/RPE or FGO covariance. IMU/Camera U shows no
+substantive conditional information increment. V6
+checkpoint training/split provenance remains unresolved.
+
+**Stop repeating exploratory 0027 TEST tuning** or designing
+another ad hoc U->sigma formula. Next research step:
+audit exact V5/V6 checkpoint/target-generation provenance
+and label timing/leakage, then write a method-first frozen
+experiment protocol including an actual measurable
+GPS-degradation target, strong static/robust/GRU controls,
+GPS-specific U ablations and **both ATE/RPE** endpoints.
+Prospective untouched drive 0020 stays sealed until
+the full method and evaluation choices are frozen.
