@@ -2523,3 +2523,112 @@ GPS-degradation target, strong static/robust/GRU controls,
 GPS-specific U ablations and **both ATE/RPE** endpoints.
 Prospective untouched drive 0020 stays sealed until
 the full method and evaluation choices are frozen.
+
+
+### AH. Found deterministic V3->V5/V6 forecast-label timing mismatch and split-boundary leakage risk
+
+GitHub source review on 2026-11-19 identified a higher-priority
+scientific integrity issue than any further Mamba/U covariance
+tuning. This is based on source code, **not yet verified against
+actual saved checkpoint lineage**:
+
+- \`experiments/dataflow_fix/build_same_source_factor_labels_v3.py\`
+  stores **one** \`*_future_factor_reliability[t]\` equal to
+  \`current[t+3]\` (with last three positions padded).
+- \`experiments/uncertainty_v5/train_reliability_uncertainty_v5.py\`
+  \`build_targets()\` and \`mamba_v6/dataset.py\`
+  \`build_targets()\` both put this single stored future
+  column into **head 1**, and source-shifted
+  \`current[t+2]\` into **head 2**, yielding
+  **[r_t,r_{t+3},r_{t+2}]**, NOT
+  intended contiguous **[r_t,r_{t+1},r_{t+2}]**.
+  This is a multi-head temporal misalignment; it does
+  not by itself invalidate the head-0 reliability
+  and U values under a given training protocol.
+  However, multi-head shared weights are also learned
+  from the wrong target chronology, so head-0 results
+  cannot simply be declared unaffected.
+- Since the future targets are prepared BEFORE
+  chronological splitting, the last THREE training
+  samples use future labels from the validation period;
+  the last THREE validation samples use future labels
+  from subsequent test times. This is *specific
+  future-label cross-partition contamination* on
+  both V5/V6, although the fraction of boundary
+  frames is small. Do not declare the within-drive
+  "TEST" a pristine held-out evaluation.
+- V5 source \`DATA\` defaults to the V3 same-source
+  NPZ in \`results/predictive_factor_reliability_v3_same_source/\`;
+  \`mamba_v6/train.py\` instead defaults to
+  \`data/factor_reliability_training_data.npz\`
+  and takes optional \`--data\`. Actual training
+  command, file digest and checkpoint lineage are
+  *not present* in the V6 training checkpoint
+  according to its torch.save key construction.
+  No evidence yet that the two frozen predictors
+  were trained on the same archive.
+- V5's model \`ReliabilityUncertaintyV5\`
+  selects \`backend="mamba"\` if \`mamba_ssm\`
+  can import, and \`backend="gru"\` otherwise.
+  The ACTUAL V5 checkpoint field \`backend\`
+  must be inspected to justify the phrase "V5 GRU".
+- The V3 GPS label is calculated using CLEAN
+  OXTS/GPS relative to degraded GPS; usable as
+  supervised oracle target in training but not an
+  online measurement in deployment. V3's IMU,
+  LiDAR and Camera factor labels use an FGO
+  trajectory optimized over the whole 0027
+  sequence as proxy reference; this can entangle
+  time periods. Neither is independent real-world
+  sensor-fault ground truth.
+
+A new **read-only** script
+\`experiments/isj_supplement/audit_dev_v5_v6_provenance.py\`
+inspects ONLY 0027 local NPZ archives, frozen V5
+\`model.pt\`, V6 \`best.pt\`, their normalization
+parameters and source-aligned r/U placeholder
+regions. The V5 expected normalization is
+train-only mean/std, V6 is train-only median/IQR;
+matching these to a candidate is *compatible with*
+that training source but **cannot PROVE** lineage
+without saved original invocation and dataset
+hash at training. The audit hashes local candidate
+archive/checkpoint files and reports missing/
+mismatched files explicitly, without substituting
+other sequences. It does **not** load raw KITTI,
+retrain, infer, run GTSAM or write files.
+It uses \`torch.load(weights_only=False)\`
+**only on the user's own locally trusted research
+checkpoints**, because NumPy scalers in them may
+not be supported by safe weights-only loading.
+Never provide untrusted .pt artifacts to this
+script.
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_v5_v6_provenance.py -v
+echo "PROVENANCE_TEST_EXIT=$?"
+# Only if unit tests pass:
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_v5_v6_provenance.py \
+    > logs/isj_dev_v5_v6_provenance.log 2>&1
+echo "PROVENANCE_AUDIT_EXIT=$?"
+cat logs/isj_dev_v5_v6_provenance.log
+~~~
+
+**Stop rules**: no claims of rigorous multi-step
+forecasting, prediction horizon accuracy or V5
+vs V6 fair comparison until exact data lineage
+and target chronology are reconciled. Do NOT
+rewrite the existing V5/V6 frozen weights or
+change the target file in place. If corrections
+are needed, start a clean new version
+with a fresh dataset hash, explicit split-safe
+horizon labels, training command and checkpoint
+manifest, predeclared strong baselines and
+no method adjustment from held-out 0020.
