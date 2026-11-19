@@ -265,3 +265,62 @@ No V7 model was retrained by this stage. The next actual engineering
 work is **new, same-realization synthetic supervision plus causal input
 availability and a frozen independent evaluation plan**; do not
 relabel old full-trajectory FGO proxies as independent truth.
+
+## Stage 4: same-realization GPS development dataset (train + validation only)
+
+Stage-3 tests: 33 passed and five frozen source SHA256s verified on 0027.
+Final-paper training remains BLOCKED. This Stage-4 tool produces only a
+GPS synthetic-injection **development** candidate from the exact
+degraded GPS measurement stream used by the historical V3 labels.
+
+Read-only default: `python -m experiments.isj_v7.build_dev_gps_candidate`.
+Explicit export: `python -m experiments.isj_v7.build_dev_gps_candidate --write-dev-candidate`.
+
+Source policy is validated and the frozen V3/degraded source SHA256 hashes
+are checked before any export. The exporter first reconstructs GPS features
+and verifies the synthetic labels via the prior canonical dry-run.
+Neither clean GPS nor corruption severity or mode is ever saved as a model input.
+
+Destination: `results/isj_v7/dev_gps_0027_same_source_v1/`.
+New files are `gps_train_val.npz` and `provenance.json`. Never overwrite
+the original V3, V5, V6 artifacts. Existing target directories are refused.
+
+Data arrays for 4544-frame 0027:
+- `gps_features`: float32 `(3862,21)`, ONLY train+val time prefix.
+- `train_anchors`: int64 `(3115,)`, anchor t=63..3177.
+- `train_targets`: float32 `(3115,3)`, reliability at t,t+1,t+2.
+- `val_anchors`: int64 `(680,)`, anchor t=3180..3859.
+- `val_targets`: float32 `(680,3)`, targets within VAL through t=3861.
+- `train_median`, `train_iqr`: float32 `(21,)`, fit only from features[:3180].
+
+The internal 0027 TEST range `[3862,4544)` is completely omitted from
+the exported feature/target archive. Training-target values are only
+synthetic injected-GPS reliability relative to original OXTS/GPS;
+they are not independent physical ground truth. Clean GPS and other
+oracle reference arrays are excluded from saved training arrays.
+
+Run on server after pulling:
+
+```bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e; set +u; set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -v
+V7_TEST_EXIT=$?; echo V7_TEST_EXIT=$V7_TEST_EXIT
+if [ "$V7_TEST_EXIT" -eq 0 ]; then
+  mkdir -p logs
+  python -u -m experiments.isj_v7.build_dev_gps_candidate \
+    > logs/isj_v7_dev_gps_preview.log 2>&1
+  V7_PREVIEW_EXIT=$?; echo V7_PREVIEW_EXIT=$V7_PREVIEW_EXIT
+  cat logs/isj_v7_dev_gps_preview.log
+  if [ "$V7_PREVIEW_EXIT" -eq 0 ]; then
+    python -u -m experiments.isj_v7.build_dev_gps_candidate \
+      --write-dev-candidate
+    echo V7_EXPORT_EXIT=$?
+  fi
+fi
+```
+
+Do not treat this step as final training approval or touch 0016/0020.
+Multi-modal, time-causal, independent evaluation design remains open.
