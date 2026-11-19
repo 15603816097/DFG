@@ -40,3 +40,62 @@ cat logs/isj_v7_preflight_0027.log
 ```
 
 You may separately record the JSON report in an experiment registry **after** reviewing it, along with the exact Git commit and approved source provenance. No learning claims follow from these audit fingerprints alone.
+
+
+## Stage 1: V3 input-feature / label-measurement consistency audit
+
+Important **static source-code discrepancy**: The V2 corrected feature builder calls
+`corrupt_gps()` with RNG stream offset `9176`, while
+the degraded four-sensor measurement builder calls `corrupt_local_gps()`
+with offset `31`. Both may use the same severity schedule but
+generally draw different GPS noise values. The V3 label builder imports GPS/IMU
+*features* from V2 and computes GPS *labels* using the separately generated
+degraded measurement archive. **No numeric assertion is made until the saved
+0027 arrays are actually audited.**
+
+The new *read-only* `audit_feature_label_streams.py` computes:
+
+1. `gps_features(V3 label-degraded_gps_local)` and compares to
+   frozen `V3 gps_features` using the original configuration.
+2. `imu_features(V3 label-degraded_acc, degraded_gyro)`
+   and compares to frozen `V3 imu_features`.
+3. Recomputes `||degraded GPS - clean GPS||` and compares against
+   `V3 diagnostic_gps_error_m` to independently confirm
+   which physical GPS realization supervised the legacy target.
+4. If available, compares V2 `corrected_feature_debug.npz`
+   GPS corruption array directly against the label-degraded GPS
+   and against V3's archived GPS feature representation.
+5. Prefix-invariance tests for GPS/IMU feature functions check that altering
+   measurements only **after** frame 79 cannot change features through
+   frame 79. This is limited to these pure Python feature functions and
+   does not establish the causality of all upstream data preparation.
+
+This audit does **not** read raw KITTI 0020/0016, load any neural network,
+perform optimization, or rewrite V3/V5/V6 artifacts. All saved measurements
+and labels must remain immutable.
+
+```bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e; set +u; set +o pipefail
+git status --short
+git pull --ff-only
+python -m pytest \
+    tests/test_isj_v7_protocol.py \
+    tests/test_isj_v7_feature_label_streams.py \
+    tests/test_isj_v7_feature_prefix_causality.py -v
+echo "V7_LINEAGE_TEST_EXIT=$?"
+# ONLY if all tests pass:
+mkdir -p logs
+python -m experiments.isj_v7.audit_feature_label_streams \
+    > logs/isj_v7_feature_label_streams_0027.log 2>&1
+echo "V7_LINEAGE_AUDIT_EXIT=$?"
+cat logs/isj_v7_feature_label_streams_0027.log
+```
+
+**Interpretation**: `gps_input_matches_gps_label_measurement=false`
+is a factual incompatibility of the *saved* GPS input and the corresponding
+oracle-target measurement stream; it is NOT an indicator of predictive
+generalization. Even with numerical match, the whole-trajectory FGO proxy
+label and reuse of 0027 remain independent unresolved limitations.
+No training on these V3 labels is approved.
