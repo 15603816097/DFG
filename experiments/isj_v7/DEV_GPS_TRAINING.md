@@ -67,3 +67,28 @@ If Mamba/CUDA is missing, do NOT install arbitrary mismatched libraries or repor
 ## Immediate next decision gate
 
 If both models train and the baseline reports look reasonable, compare `h0/h1/h2` validation MAE/RMSE against train-mean and always-one baselines, and check uncertainty-vs-error information **conditional on reliability**. An impressive MAE or small U alone is not a publishable improvement. Only then integrate **pre-update** factor-graph covariance logic and add a scientifically independent evaluation reference.
+
+## Test-path regression fix (2026-11-19)
+
+The first server run found 47/48 tests passed, with
+`test_dev_cpu_smoke_has_no_optimizer_output` failing because
+`load_dev_data(root=DEFAULT_DEST)` bound the default path at
+function-definition time. Stage-5 trainer now explicitly calls
+`load_dev_data(DEFAULT_DEST)` with the current frozen-path variable.
+The existing regression test mocks that variable and verifies a
+CPU GRU smoke pass without writing checkpoints.
+
+This does not weaken the production GPS candidate guard; `load_dev_data`
+continues to compare its actual path against the frozen V7 development
+path and refuses unrelated data or orphaned test segments.
+
+On the same server:
+```bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+python -u -m experiments.isj_v7.train_gps_dev --backend gru --smoke-only
+# Optional: run GRU-only CPU development baseline once the tests pass.
+# Mamba cannot run on this server until torch.cuda.is_available() is true.
+```

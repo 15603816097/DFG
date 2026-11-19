@@ -292,7 +292,10 @@ def run(args: argparse.Namespace) -> dict:
         raise ValueError("invalid training arguments")
     if args.backend not in {"gru", "mamba"}:
         raise ValueError("choose either gru or mamba, no backend fallback")
-    data, metadata = load_dev_data()
+    # Pass the live frozen development path explicitly. Python binds
+    # default argument objects at function definition, so omitting this
+    # argument would bypass a controlled test-time path injection.
+    data, metadata = load_dev_data(DEFAULT_DEST)
     device = choose_device(args.device, args.backend)
     seed_everything(args.seed)
     model = ReliabilityForecastV7(
