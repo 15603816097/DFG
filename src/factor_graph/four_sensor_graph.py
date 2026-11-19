@@ -524,6 +524,7 @@ def run_four_sensor_factor_graph(
     use_lidar=True,
     use_camera=True,
     config=None,
+    gps_sigmas_override=None,
 ):
     """
     Build and optimize a Pose3 factor graph.
@@ -558,6 +559,26 @@ def run_four_sensor_factor_graph(
         raise ValueError(
             "At least 2 frames are required"
         )
+
+    # Optional explicit GPS covariance bridge for V7 development pilots.
+    # Legacy callers retain identical behavior when this is omitted.
+    # The override must be precomputed without labels, posterior FGO
+    # residuals or reference trajectories. Predictive legacy mode is
+    # disallowed to prevent ambiguous double weighting.
+    if gps_sigmas_override is not None:
+        if mode != "fixed" or not use_gps:
+            raise ValueError(
+                "gps_sigmas_override requires fixed mode and use_gps=True"
+            )
+        gps_sigmas_override = np.asarray(
+            gps_sigmas_override, dtype=np.float64
+        )
+        if (gps_sigmas_override.shape != (n,)
+                or not np.isfinite(gps_sigmas_override).all()
+                or np.any(gps_sigmas_override <= 0.0)):
+            raise ValueError(
+                "gps_sigmas_override must contain n finite positive sigmas"
+            )
 
     reliabilities = None
 
@@ -634,7 +655,9 @@ def run_four_sensor_factor_graph(
         if use_gps:
             if mode == "fixed":
                 sigma_gps = (
-                    config.gps_fixed_sigma
+                    float(gps_sigmas_override[i])
+                    if gps_sigmas_override is not None
+                    else config.gps_fixed_sigma
                 )
             else:
                 sigma_gps = float(

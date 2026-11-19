@@ -413,3 +413,76 @@ fi
 All stages still use 0027 **development-only** synthetic GPS oracle
 labels; no held-out 0016/0020 drive is accessed. Even a capacity-matched
 development MAE improvement is not yet a state-estimation ATE/RPE gain.
+
+## Stage 8 — 0027 VAL-only four-sensor GPS covariance pilot (DEVELOPMENT)
+
+Stage 7 capacity-matched control completed (three CUDA seeds, 43/44/45):
+GRU106=139290 params vs Mamba96=139590. Mean V7 synthetic GPS reliability
+MAE reductions of Mamba vs GRU106 were 13.89%, 15.70%, 14.71% for
+h0,h1,h2, respectively. These are ONE explored 0027 drive, not
+independent generalization; noisy evidential Beta intervals remain
+poorly calibrated. Do not claim any physical state-estimation gain yet.
+
+Stage 8 introduces `run_gps_covariance_pilot.py`, an explicit 680-frame
+validation-only 0027 offline FGO prototype. It uses the identical
+degraded GPS, gyro, LiDAR and Camera factors from the historic 0027
+degraded four-sensor archive. A read-only source-check verifies the
+degraded sensor SHA256 against the V7 supervision manifest.
+Held-out drives 0016/0020 are not accessed. The archived 0027 NPZ may be read as a whole, but frames 3862+ are excluded from FGO factors, sigma mapping and metrics.
+
+Changes to legacy `run_four_sensor_factor_graph` consist of ONE optional
+`gps_sigmas_override` argument for fixed-mode runs. No supplied override
+means **exact same previous logic**. Overrides must be finite positive
+per-frame sigmas and cannot coexist with legacy predictive mode.
+All three other sensor factor covariances and initial priors remain fixed.
+
+Predeclared GPS measurement sigma from h0 prediction at time t:
+
+    sigma = 5m * sqrt(1 + 4*(1-r_t) + 0.5*U_t)
+
+For reliability-only, U is omitted; fixed has sigma=5m. U is a
+bounded evidential proxy, NOT probabilistically calibrated variance.
+This is a heuristic mapping, not a fully calibrated proposal.
+Reference clean OXTS is accessed ONLY after FGO to compute local-origin
+trajectory error and 1-/10-frame displacement error, all **not
+independent** of same sensor stream and not valid paper-ready ATE/RPE.
+The batch FGO uses future frames within the 680-frame VAL segment;
+it is retrospective NOT online iSAM2 or causal FGO.
+
+Only run seed43 first, read-only preflight before optimizer:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+set +e; set +u; set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+echo TEST_RC=$?
+python -u -m experiments.isj_v7.run_gps_covariance_pilot --case fixed --seed 43
+python -u -m experiments.isj_v7.run_gps_covariance_pilot --case mamba_r --seed 43
+~~~
+
+Then only after both preflights pass:
+
+~~~bash
+python -u -m experiments.isj_v7.run_gps_covariance_pilot \
+  --case fixed --seed 43 --run-pilot
+echo FIXED_PILOT_EXIT=$?
+python -u -m experiments.isj_v7.run_gps_covariance_pilot \
+  --case mamba_r --seed 43 --run-pilot
+echo MAMBA_PILOT_EXIT=$?
+~~~
+
+Each run writes into a NEW write-once
+`results/isj_v7/gps_four_sensor_dev_pilot_v1/seed_43/<case>/` folder
+with trajectory, poses, GPS sigma array and `pilot_metrics.json`.
+Existing folders are NEVER overwritten. Compare only paired
+complete outputs using the same reference, same 680 timestamps and
+same factor-graph setting. If the first cases pass, run additional
+`gru96_r`, `gru106_r`, `mamba_r_u` to distinguish reliability effect
+from raw evidence proxy. Do NOT tune gain coefficients on these
+validation error metrics and then claim independent results.
+
+Prior to final publication: finish the independent evaluation-reference
+protocol and frozen held-out testing; design valid same-stream labels
+for IMU/LiDAR/Camera; implement prospective causal incremental FGO.
