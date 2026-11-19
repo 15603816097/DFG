@@ -38,7 +38,10 @@ ROOT = Path(__file__).resolve().parents[2]
 DEGRADED = ROOT / "results" / "degraded_four_sensor_measurements"
 OUTPUT = ROOT / "results" / "isj_v7" / "gps_four_sensor_dev_pilot_v1"
 BEGIN = 3180
-END = 3862
+# Validation has 682 raw frames [3180,3862), but 680 h0 anchors
+# [3180,3860). The two tail frames [3860,3862) are *labels only*
+# for h1/h2 on the final anchors, NOT additional FGO measurements.
+END = 3860
 EXPECTED_N = 4544
 CASES = ("fixed", "gru96_r", "gru106_r", "mamba_r", "mamba_r_u")
 BASE_SIGMA = FourSensorFactorConfig().gps_fixed_sigma
@@ -158,7 +161,9 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         prediction_sha = None
     else:
         arrays = run["arrays"]
-        if not np.array_equal(arrays["anchors"], candidate["anchors"]):
+        if (not np.array_equal(arrays["anchors"], candidate["anchors"])
+                or not np.array_equal(candidate["anchors"],
+                                      np.arange(BEGIN, END, dtype=np.int64))):
             raise ValueError("wrong timestamp or label source")
         sigma = build_gps_sigmas(
             arrays["reliability"][:, 0],

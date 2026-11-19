@@ -424,11 +424,11 @@ independent generalization; noisy evidential Beta intervals remain
 poorly calibrated. Do not claim any physical state-estimation gain yet.
 
 Stage 8 introduces `run_gps_covariance_pilot.py`, an explicit 680-frame
-validation-only 0027 offline FGO prototype. It uses the identical
+validation-anchor-only 0027 offline FGO prototype. It uses the identical
 degraded GPS, gyro, LiDAR and Camera factors from the historic 0027
 degraded four-sensor archive. A read-only source-check verifies the
 degraded sensor SHA256 against the V7 supervision manifest.
-Held-out drives 0016/0020 are not accessed. The archived 0027 NPZ may be read as a whole, but frames 3862+ are excluded from FGO factors, sigma mapping and metrics.
+Held-out drives 0016/0020 are not accessed. Raw 0027 VAL is [3180,3862) (682 frames), while valid h0 model anchors are [3180,3860) (680 anchors). Stage 8 FGO therefore consumes **only [3180,3860)**; frames 3860 and 3861 are used solely as future h1/h2 supervision for the last anchors, not for FGO. The archived 0027 NPZ may be loaded as a whole, but rows 3860+ are excluded from FGO factors, sigma mapping and metrics.
 
 Changes to legacy `run_four_sensor_factor_graph` consist of ONE optional
 `gps_sigmas_override` argument for fixed-mode runs. No supplied override
@@ -486,3 +486,17 @@ validation error metrics and then claim independent results.
 Prior to final publication: finish the independent evaluation-reference
 protocol and frozen held-out testing; design valid same-stream labels
 for IMU/LiDAR/Camera; implement prospective causal incremental FGO.
+
+
+### Stage 8 correction: raw validation frames versus forecast anchors
+
+The first server run stopped safely at 69/74 tests: five new tests
+failed because the prototype incorrectly used end-exclusive 3862,
+generating 682 graph frames for only 680 h0 model predictions. This
+was a Stage-8 interval bug, not an issue with the 0027 dataset or
+GRU/Mamba checkpoints. FGO end is now **3860** (start 3180), exactly
+matching saved model anchors. Test assertions now actively mutate
+both raw-tail frames 3860/3861 to detect accidental graph leakage.
+The source supervision/provenance manifest and held-out restrictions
+remain unchanged. All Stage-8 optimization still requires an explicit
+`--run-pilot` flag after read-only preflight.

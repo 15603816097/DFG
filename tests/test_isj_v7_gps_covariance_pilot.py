@@ -78,10 +78,10 @@ def test_subgraph_is_only_0027_validation_and_rebases_without_clean_reference():
 def test_changing_future_internal_test_does_not_affect_subgraph():
     m = _measurements()
     expected = pilot.subgraph_measurements(m)
-    m.gps_local[3862:] += 10000.
-    m.imu_gyro[3862:] += 7.
-    m.lidar_between[3862:] *= 3.
-    m.camera_between[3862:] *= 9.
+    m.gps_local[3860:] += 10000.
+    m.imu_gyro[3860:] += 7.
+    m.lidar_between[3860:] *= 3.
+    m.camera_between[3860:] *= 9.
     observed = pilot.subgraph_measurements(m)
     assert np.array_equal(expected.gps_local, observed.gps_local)
     assert np.array_equal(
@@ -152,3 +152,22 @@ def test_legacy_factor_graph_override_rejects_malformed_sigmas(tmp_path):
             m, tmp_path / "not_written", mode="predictive",
             gps_sigmas_override=np.asarray([5.0, 5.0]))
     assert not (tmp_path / "not_written").exists()
+
+
+
+def test_fgo_interval_matches_exactly_680_h0_validation_anchors():
+    # Raw VAL has 682 rows, but h0 has only 680 valid model anchors.
+    # The last two raw rows are future targets for h1/h2, never FGO inputs.
+    anchors = np.arange(3180, 3860, dtype=np.int64)
+    assert pilot.BEGIN == 3180
+    assert pilot.END == 3860
+    assert pilot.END - pilot.BEGIN == len(anchors) == 680
+    m = _measurements()
+    sub = pilot.subgraph_measurements(m)
+    assert sub.gps_local.shape[0] == len(anchors)
+    assert np.array_equal(
+        sub.gps_local[:, 0],
+        m.gps_local[anchors, 0] - m.gps_local[3180, 0],
+    )
+    assert sub.gps_local[-1, 0] == pytest.approx(
+        m.gps_local[3859, 0] - m.gps_local[3180, 0])
