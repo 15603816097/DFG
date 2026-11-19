@@ -6,6 +6,8 @@ import pytest
 from experiments.isj_supplement.audit_dev_uncertainty_risk_by_split import (
     finite_corr, rank_auc, ranks_with_ties, split_ranges,
     test_risk_metrics as score_risk,
+    common_val_test_ranges, conditional_added_value,
+    fit_val_risk_calibrator, paired_auc_block_ci,
 )
 
 
@@ -51,3 +53,58 @@ def test_noninformative_constant_and_invalid_inputs():
         rank_auc([.2,.3], [True])
     with pytest.raises(ValueError):
         ranks_with_ties(np.eye(2))
+
+
+
+def test_common_val_and_test_indices_are_same_for_both_models():
+    val,test=common_val_test_ranges(4544)
+    assert val==(3180,3860)
+    assert test==(3862,4542)
+    assert test[0]-val[1]==2
+
+
+def test_conditionally_informative_u_improves_r_plus_u_on_future_test():
+    pytest.importorskip("sklearn")
+    n=4544
+    r=np.full(n,.8)
+    u=(np.arange(n)%100)/100.
+    # Synthetic target is not made from GT and only used in this
+    # numerical test. It lies in [0,1].
+    err=np.where(u>=.8,.3,.01)
+    target=r-err
+    out=conditional_added_value(
+        target,r,u,*common_val_test_ranges(n)
+    )
+    assert out["val_n"]==680
+    assert out["test_n"]==680
+    assert 0.15<out["test_positive_fraction"]<.25
+    assert out["delta_auc_rplusu_minus_r"]>.45
+    assert out["delta_brier_rminus_rplusu"]>.01
+    assert out["delta_logloss_rminus_rplusu"]>.03
+    assert out["delta_auc_block_ci95"][0]>0
+
+
+def test_conditional_calibrator_refuses_invalid_training_labels():
+    pytest.importorskip("sklearn")
+    with pytest.raises(ValueError,match="Invalid VAL"):
+        fit_val_risk_calibrator(
+            np.ones((40,1)),np.zeros(40,bool),np.ones((40,1))
+        )
+    with pytest.raises(ValueError,match="Invalid ordered"):
+        conditional_added_value(
+            np.full(100,.7),np.full(100,.8),np.full(100,.2),
+            (70,90),(80,100)
+        )
+
+
+def test_identical_score_block_bootstrap_has_zero_auc_delta():
+    pytest.importorskip("sklearn")
+    n=200
+    y=(np.arange(n)%7)==0
+    prob=(np.arange(n)%11)/11.
+    lo,hi,used=paired_auc_block_ci(
+        y,prob,prob,block=16,reps=60,seed=1
+    )
+    assert used>40
+    assert lo==pytest.approx(0.)
+    assert hi==pytest.approx(0.)
