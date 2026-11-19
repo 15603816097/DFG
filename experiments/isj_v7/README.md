@@ -324,3 +324,18 @@ fi
 
 Do not treat this step as final training approval or touch 0016/0020.
 Multi-modal, time-causal, independent evaluation design remains open.
+
+## Stage 5 — first V7 GPS-only GRU/Mamba DEVELOPMENT training
+
+See `DEV_GPS_TRAINING.md` for verified protocol, model definitions,
+read-only smoke tests, optional CUDA/Mamba environment checks, and
+complete training commands. New files:
+
+- `model_dev_gps.py`: explicit GRU/Mamba backbones and common Beta evidential head.
+- `train_gps_dev.py`: dev-only, SHA256-checked train+validation training and metrics.
+- `tests/test_isj_v7_gps_training.py`: input/target integrity, model/backprop, Mamba fail-closed and evaluation checks.
+
+This stage explicitly trains **only on the GPS synthetic-injection
+development candidate**. It does not run any independent 0016/0020
+test, FGO benchmark, or clean-GPS input. The Stage-3 final-training
+release gate remains closed.
