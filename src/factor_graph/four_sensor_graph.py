@@ -525,6 +525,7 @@ def run_four_sensor_factor_graph(
     use_camera=True,
     config=None,
     gps_sigmas_override=None,
+    build_graph_only=False,
 ):
     """
     Build and optimize a Pose3 factor graph.
@@ -997,6 +998,12 @@ def run_four_sensor_factor_graph(
         "Factor counts:",
         factor_counts,
     )
+
+    # Explicit read-only audit hook: return the EXACT objective graph
+    # constructed by the main solver, before optimization or any writes.
+    # Existing callers still follow the unmodified optimizer path.
+    if build_graph_only:
+        return graph, initial, factor_counts
 
     params = (
         gtsam.LevenbergMarquardtParams()
