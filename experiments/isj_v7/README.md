@@ -163,3 +163,71 @@ measurement streams for all modalities (especially camera/physical
 LiDAR/FGO), avoid lookahead/entangled trajectory supervision, and set
 independent cross-drive validation. Preserve reserved 0016/0020 until
 then. Do not modify V3/V5/V6 files to make old experiments appear fixed.
+
+
+## Stage 2: archived Camera / physical LiDAR factor-label lineage (read-only)
+
+The GPS canonical dry-run was verified on 2026-11-19: all **18 tests
+PASSED**, audit exit 0. Rebuilding 21D GPS features from the exact
+degraded GPS measurement stream underlying the original oracle labels
+produced SHA256 `e1919787f2a812d793c7ae673e562f9c09104510310d446b178d48b42525e7ae`.
+V3 oracle GPS errors and mapped labels matched precisely, with clean
+GPS used only as an offline supervision reference. This does **not**
+erase the 2791/4544 old-feature mismatch or approve independent training.
+
+Next, `audit_camera_lidar_factor_lineage.py` tests whether
+the frozen V3 Camera/LiDAR supervision truly matches the **archived**
+degraded stereo-VO between-factors and physical degraded LiDAR
+between-factors, respectively, against the exact saved
+`results/four_sensor_fixed_fg/poses.npy` reference used by the
+original V3 label builder. It recomputes each target-aligned
+measurement-vs-fixed-FGO translation/rotation error, invalid-factor
+`+inf` diagnostic and minimum reliability, and the Gaussian
+error-to-reliability mapping. It hashes all four source files and does
+not rewrite data, run FGO, load raw KITTI or infer with networks.
+It is a **cross-artifact consistency check reusing the historical
+mapping definitions**, NOT an independent external validation.
+
+This check deliberately leaves
+`feature_input_vs_factor_raw_measurement_verified=false`.
+V2 Camera features are computed from a degraded *single left frame*,
+while the archived camera factors use degraded *stereo pairs plus next
+left frame*; V2 LiDAR features use physically degraded single scans
+while archived LiDAR factors are odometry computed on successive
+degraded scans. Same original code family is not proof the exact
+archived image/point-cloud realization was used.
+
+**Most importantly** the fixed-FGO reference uses an *entire* 0027
+trajectory optimized with sensor data, and so is NOT an external
+independent oracle. Even perfect factor-label matches do not authorize
+paper-ready V7 training on these Camera/IMU/LiDAR labels.
+
+```bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+
+python -m pytest \
+  tests/test_isj_v7_protocol.py \
+  tests/test_isj_v7_feature_label_streams.py \
+  tests/test_isj_v7_feature_prefix_causality.py \
+  tests/test_isj_v7_gps_canonical_dryrun.py \
+  tests/test_isj_v7_camera_lidar_factor_lineage.py -v
+V7_MODALITY_TEST_EXIT=$?
+echo "V7_MODALITY_TEST_EXIT=$V7_MODALITY_TEST_EXIT"
+
+if [ "$V7_MODALITY_TEST_EXIT" -eq 0 ]; then
+  mkdir -p logs
+  python -u -m experiments.isj_v7.audit_camera_lidar_factor_lineage \
+    > logs/isj_v7_camera_lidar_factor_lineage_0027.log 2>&1
+  echo "V7_MODALITY_AUDIT_EXIT=$?"
+  cat logs/isj_v7_camera_lidar_factor_lineage_0027.log
+fi
+```
+
+Next research gate should be **method-first independent supervision
+policy and evaluation protocol**, not more opportunistic tuning on
+within-drive 0027 "TEST". Maintain the held-out 0016/0020 embargo.
