@@ -2382,3 +2382,92 @@ and factor graph work remains available; this
 decision does not establish Mamba/U gains.
 Retain raw data, outputs, model checkpoints and
 the cleaned repository's reproducibility.
+
+
+### AF. Revisiting V5/V6 evidential uncertainty U: marginal ranking is not incremental information
+
+On 2026-11-19 the user ran
+\`audit_dev_uncertainty_risk_by_split.py\` on frozen 0027 artifacts;
+4/4 unit tests passed and audit exit 0. Its target is the
+same non-independent \`factor_reliability_training_data.npz\`
+V3 factor-proxy label, NOT genuine sensor-failure ground truth.
+The "TEST" segment is within heavily explored/trained-on 0027;
+V6 checkpoint provenance is not independently verified.
+
+Per-model original TEST metrics (note two-frame split mismatch
+between V5 and V6, fixed by the next matched audit):
+
+| Sensor | Model | rMAE | AUC(U) | AUC(1-r) | U minus (1-r) |
+|---|---|---:|---:|---:|---:|
+| GPS | GRU V5 | .14115 | .8729 | .8554 | +.0175 |
+| GPS | Mamba V6 | **.12743** | **.8793** | .8121 | **+.0672** |
+| IMU | GRU V5 | **.15349** | **.7540** | **.7626** | -.0086 |
+| IMU | Mamba V6 | .16005 | .6287 | .6432 | -.0145 |
+| Camera | GRU V5 | **.15767** | **.8223** | **.8264** | -.0041 |
+| Camera | Mamba V6 | .16767 | .6685 | .6685 | +.0000 |
+
+Mamba's GPS rMAE is descriptively ~9.7% lower, but that is
+NOT a strict matched-frame comparison and cannot imply FGO
+gain; Mamba is not universally superior. Across original
+TRAIN/VAL/TEST, GPS Mamba U AUC-(1-r) was positive at
++.0636/+.0449/+.0672. However U and r are **both coupled by
+the evidential Beta parameterization**; marginal AUC(U) >
+AUC(1-r) does NOT establish that U supplies new predictive
+information after r has been conditioned on. The current
+U vs 1-r AUC ranks each model's OWN prediction-error
+outcome, so the different models' U AUROCs cannot be
+interpreted as direct independent sensor-fault comparisons.
+
+Therefore this same existing read-only audit script now
+accepts \`--conditional\`: it fits simple L2-logistic
+calibrators (with feature scaling fit solely on VAL)
+for \`(1-r)\` and \`(1-r,U)\`. Both compare on exactly the
+same **common 0027 VAL=(3180,3860)** and
+**common TEST=(3862,4542)** frame indices for V5 and
+V6. Per-model high-risk outcome \`abs(r-target) >=
+quantile_80(error_on_VAL)\` is defined with the VAL
+cutoff FIXED before scoring TEST. Report:
+TEST positive fraction, ROC AUC(r-only), AUC(r+U),
+added AUC, paired temporal moving-block bootstrap
+(32-frame blocks, seed 20261119, 400 resamples)
+95% descriptive AUC delta CI; Brier score and
+log-loss gains of r+U vs r. A *positive* Brier/
+log-loss gain means r+U reduced TEST risk error.
+Neither the cutoff nor the calibrator is fit on
+TEST. No new Mamba or GRU training, FGO, source
+sensor factors, or output files. Requires
+\`scikit-learn\`, lazy imported only in
+\`--conditional\` mode.
+
+Commands:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e
+set +u
+set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_dev_uncertainty_risk_by_split.py -v
+echo "CONDITIONAL_TEST_EXIT=$?"
+# Only when all tests pass:
+mkdir -p logs
+python -u experiments/isj_supplement/audit_dev_uncertainty_risk_by_split.py \
+  --conditional > logs/isj_dev_u_conditional.log 2>&1
+echo "CONDITIONAL_AUDIT_EXIT=$?"
+cat logs/isj_dev_u_conditional.log
+~~~
+
+Interpretation: If GPS Mamba r+U does NOT improve both
+risk discrimination and calibrated risk error, stop
+claiming its evidential U provides incremental
+reliability information; compare simpler models.
+Even positive improvements in this **repeatedly
+explored, within-0027 TEST segment** are provisional.
+They do NOT establish calibrated uncertainty,
+forecast timing, a useful online GPS fault gate,
+FGO accuracy gains, or independent held-out
+generalization. No 0016/0020 testing until a
+method is frozen. Avoid tuning this calibrator
+based on TEST scores; it is a single predeclared
+read-only comparison.
