@@ -99,3 +99,67 @@ oracle-target measurement stream; it is NOT an indicator of predictive
 generalization. Even with numerical match, the whole-trajectory FGO proxy
 label and reuse of 0027 remain independent unresolved limitations.
 No training on these V3 labels is approved.
+
+
+## Stage 1 confirmed result on saved 0027 data (2026-11-19)
+
+User verified all 13 protocol/stream/prefix tests PASSED. Read-only real
+0027 audit exited zero. **Actual GPS input-feature vs label-measurement
+mismatch CONFIRMED**:
+
+| comparison | mismatched frames | mismatched values | max absolute delta |
+|---|---:|---:|---:|
+| frozen V3 GPS 21D features vs rebuilding from V3 label's degraded GPS | 2791/4544 | 57071 | 16063.6284 in feature units |
+| V2 debug corrupted GPS 3D vs V3 label degraded GPS 3D | 2659/4544 | 7973 | 55.3394 m |
+| frozen V3 GPS features vs rebuilding from V2 debug GPS | 0 | 0 | 0 |
+| frozen V3 IMU features vs V3 label degraded IMU | 0 | 0 | 0 |
+| V3 GPS oracle-error diagnostic vs computed degraded-minus-clean GPS | 0 | 0 | 0 |
+
+The larger mismatched count in 21D features than in 3D inputs is
+consistent with past-window difference/statistic propagation; it is
+not a localization ATE. **Do not present historical V5/V6 GPS
+reliability or conditional uncertainty gains as a validated deployable
+fault detector.**
+
+### Next narrow gate: read-only canonical GPS *dry-run*
+
+`audit_gps_canonical_dryrun.py` reconstructs one GPS feature
+candidate solely from **the exact** `degraded_gps_local` array used by
+the original V3 oracle labels. It separately verifies GPS `error_m`
+and `exp(-(error / 5m)^2)`-with-clipping against the saved V3
+diagnostic and current reliability labels. It defines the original 0027
+frame split and train-only robust scaler and hashes candidate features
+and split-purged labels **in memory only**. No file is written by the
+module; in particular, the original V3 NPZ and V5/V6 weights remain
+unchanged. This audit does not validate independent physical GPS
+truth; clean OXTS GPS is used only as the existing synthetic supervision
+oracle, never the model input.
+
+```bash
+cd /root/projects/DFG
+conda activate dfg-isj
+set +e; set +u; set +o pipefail
+git pull --ff-only
+python -m pytest \
+    tests/test_isj_v7_protocol.py \
+    tests/test_isj_v7_feature_label_streams.py \
+    tests/test_isj_v7_feature_prefix_causality.py \
+    tests/test_isj_v7_gps_canonical_dryrun.py -v
+code=$?
+echo "GPS_CANONICAL_TEST_EXIT=$code"
+if [ "$code" -eq 0 ]; then
+  mkdir -p logs
+  python -u -m experiments.isj_v7.audit_gps_canonical_dryrun \
+      > logs/isj_v7_gps_canonical_dryrun_0027.log 2>&1
+  echo "GPS_CANONICAL_AUDIT_EXIT=$?"
+  cat logs/isj_v7_gps_canonical_dryrun_0027.log
+fi
+```
+
+Even if this dry-run confirms the exact synthetic oracle mapping, it
+will still return `approved_for_final_training=false`. Before training
+a final paper-ready model, freeze label policy, ensure consistent
+measurement streams for all modalities (especially camera/physical
+LiDAR/FGO), avoid lookahead/entangled trajectory supervision, and set
+independent cross-drive validation. Preserve reserved 0016/0020 until
+then. Do not modify V3/V5/V6 files to make old experiments appear fixed.
