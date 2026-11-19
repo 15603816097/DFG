@@ -45,8 +45,8 @@ def _triplet(*, seed=43):
                 "dataset_sha256": "a" * 64,
             },
             "arrays": {
-                "synthetic_targets": target,
-                "anchors": anchors,
+                "synthetic_targets": target.copy(),
+                "anchors": anchors.copy(),
                 "reliability": prediction,
             },
         }
