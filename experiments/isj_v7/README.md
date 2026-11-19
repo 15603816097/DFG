@@ -231,3 +231,37 @@ fi
 Next research gate should be **method-first independent supervision
 policy and evaluation protocol**, not more opportunistic tuning on
 within-drive 0027 "TEST". Maintain the held-out 0016/0020 embargo.
+
+
+## Stage 3 — supervised-label policy and preregistration guard
+
+The saved 0027 Camera/LiDAR proxy-label audit succeeded on the server
+(**23/23 tests passed**, exit 0). All 4543 LiDAR factors are marked
+valid; Camera has 4461 valid and 82 invalid. Both modalities' archived
+factor errors and reliability labels match their original saved
+factor measurements and full-trajectory fixed-FGO reference, but that
+reference is not independent ground truth. Exact original image/point-cloud
+input-to-factor provenance remains unverified.
+
+Review `SUPERVISION_AND_EVALUATION_POLICY.md` before any V7 training
+design. `supervision_policy_v1.json` is an immutable-status
+development policy tracking 0027 lineage and SHA256 across five source
+artifacts. `supervision_gate.py` validates this policy,
+can read-only hash the known files, and **refuses** to authorize final
+training or independent-generalization claims. It never inspects 0016/0020
+nor writes data.
+
+```bash
+cd /root/projects/DFG
+conda activate dfg-isj
+git pull --ff-only
+python -m pytest tests/test_isj_v7_supervision_gate.py -v
+python -m experiments.isj_v7.supervision_gate --verify-sources
+# Deliberate refusal test (expected exit=2):
+python -m experiments.isj_v7.supervision_gate --require-final-training
+```
+
+No V7 model was retrained by this stage. The next actual engineering
+work is **new, same-realization synthetic supervision plus causal input
+availability and a frozen independent evaluation plan**; do not
+relabel old full-trajectory FGO proxies as independent truth.
