@@ -339,3 +339,77 @@ This stage explicitly trains **only on the GPS synthetic-injection
 development candidate**. It does not run any independent 0016/0020
 test, FGO benchmark, or clean-GPS input. The Stage-3 final-training
 release gate remains closed.
+
+## Stage 7 — parameter-count matched GRU development control
+
+The 3 V100 seed pairs 43/44/45 have completed successfully.
+On these 3 development seeds, Mamba MAE is lower for all 9 (seed,horizon)
+comparisons; Mamba RMSE is not uniformly lower (seed45,h0).
+The nominal Beta 80% interval coverage remains roughly 33%-39%, so
+the evidential proxy is NOT calibrated measurement covariance.
+
+Model parameter counts: GRU96=114630; Mamba96=139590; GRU106=139290.
+GRU106 is within 300 parameters (0.22%) of Mamba96.
+
+Stage7 adds `--capacity-control` to the same `train_gps_dev.py` trainer.
+It is accepted **only** with `--backend gru --hidden 106 --layers 2`,
+and uses a separate write-once path
+`results/isj_v7/dev_gps_capacity_gru_v1/gru/seed_<SEED>/`.
+It does not overwrite or alter any existing GRU96/Mamba96 run.
+
+New `compare_capacity_control.py` verifies provenance, dataset hashes,
+paired 680 validation frames and matching hyperparameters (except
+hidden width) across GRU96, GRU106 and Mamba96 for each seed.
+Read-only reports are descriptive within the already explored 0027.
+
+Run:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+set +e; set +u; set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+V7_TEST_RC=$?
+echo V7_TEST_RC=$V7_TEST_RC
+if [ "$V7_TEST_RC" -eq 0 ]; then
+  python -u -m experiments.isj_v7.train_gps_dev \
+      --backend gru --hidden 106 --layers 2 --device cuda \
+      --capacity-control --smoke-only
+  CAP_SMOKE_RC=$?
+  echo CAP_SMOKE_RC=$CAP_SMOKE_RC
+  if [ "$CAP_SMOKE_RC" -eq 0 ]; then
+    mkdir -p logs
+    failed=0
+    for seed in 43 44 45; do
+      dest="results/isj_v7/dev_gps_capacity_gru_v1/gru/seed_${seed}"
+      log="logs/isj_v7_capacity_gru_seed_${seed}.log"
+      if [ -e "$dest" ]; then
+        echo "CAPACITY_OUTPUT_EXISTS_NOT_OVERWRITTEN $dest"
+        if [ ! -f "$dest/metrics.json" ] || \
+           [ ! -f "$dest/val_predictions.npz" ]; then
+          echo "INCOMPLETE_CAPACITY_RUN $dest"
+          failed=1; break
+        fi
+        continue
+      fi
+      python -u -m experiments.isj_v7.train_gps_dev \
+        --backend gru --device cuda --hidden 106 --layers 2 \
+        --seed "$seed" --epochs 40 --patience 8 --batch-size 64 \
+        --capacity-control > "$log" 2>&1
+      rc=$?
+      echo "CAPACITY_TRAIN seed=$seed rc=$rc"
+      if [ "$rc" -ne 0 ]; then tail -n 60 "$log"; failed=1; break; fi
+    done
+    if [ "$failed" -eq 0 ]; then
+      python -u -m experiments.isj_v7.compare_capacity_control \
+        --seeds 43 44 45
+      echo CAPACITY_COMPARE_RC=$?
+    fi
+  fi
+fi
+~~~
+
+All stages still use 0027 **development-only** synthetic GPS oracle
+labels; no held-out 0016/0020 drive is accessed. Even a capacity-matched
+development MAE improvement is not yet a state-estimation ATE/RPE gain.

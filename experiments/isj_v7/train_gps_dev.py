@@ -43,6 +43,7 @@ EXPECTED_KEYS = {
     "train_targets", "val_targets", "train_median", "train_iqr",
 }
 DEFAULT_OUTPUT = DEFAULT_DEST.parent / "dev_gps_baseline_v1"
+CAPACITY_OUTPUT = DEFAULT_DEST.parent / "dev_gps_capacity_gru_v1"
 
 
 def file_sha(path: Path) -> str:
@@ -292,6 +293,12 @@ def run(args: argparse.Namespace) -> dict:
         raise ValueError("invalid training arguments")
     if args.backend not in {"gru", "mamba"}:
         raise ValueError("choose either gru or mamba, no backend fallback")
+    is_capacity = bool(getattr(args, "capacity_control", False))
+    if is_capacity and (args.backend != "gru" or args.hidden != 106
+                        or args.layers != 2):
+        raise ValueError(
+            "capacity control requires GRU hidden=106 layers=2")
+    args.capacity_control = is_capacity
     # Pass the live frozen development path explicitly. Python binds
     # default argument objects at function definition, so omitting this
     # argument would bypass a controlled test-time path injection.
@@ -338,9 +345,20 @@ def run(args: argparse.Namespace) -> dict:
             "development_only": True,
         }
 
+    # Keep the original GRU/Mamba baseline namespace immutable.
+    # Capacity control is explicitly whitelisted: hidden=106 GRU with
+    # 139290 parameters versus hidden=96 Mamba with 139590 parameters.
+    # The capacity control runs on EXACTLY the same frozen GPS data.
+    target_output = (CAPACITY_OUTPUT if args.capacity_control
+                     else DEFAULT_OUTPUT)
     if args.output.resolve() != DEFAULT_OUTPUT.resolve():
-        raise ValueError("training outputs must stay in frozen V7 dev root")
-    dest = args.output / args.backend / f"seed_{args.seed}"
+        raise ValueError("training output root cannot be overridden")
+    if args.capacity_control:
+        if (args.backend != "gru" or args.hidden != 106
+                or args.layers != 2):
+            raise ValueError(
+                "capacity control requires GRU hidden=106 layers=2")
+    dest = target_output / args.backend / f"seed_{args.seed}"
     if dest.exists():
         raise FileExistsError(
             f"existing run: {dest}; refuse to overwrite. Use a new seed.")
@@ -403,6 +421,8 @@ def run(args: argparse.Namespace) -> dict:
         "backend": args.backend,
         "device": str(device),
         "parameter_count": parameters,
+        "run_family": ("capacity_gru_h106" if args.capacity_control
+                       else "baseline"),
         "minibatch_order": "fixed independent torch Generator(seed)",
         "development_only": True,
         "approved_for_final_training": False,
@@ -443,6 +463,8 @@ def run(args: argparse.Namespace) -> dict:
     torch.save({
         "model_state_dict": best_state,
         "backend": args.backend,
+        "run_family": ("capacity_gru_h106" if args.capacity_control
+                       else "baseline"),
         "model_kwargs": {
             "backend": args.backend, "input_dim": 21,
             "hidden": args.hidden, "layers": args.layers,
@@ -487,6 +509,8 @@ def main(argv=None) -> None:
     p.add_argument("--min-delta", type=float, default=1e-4)
     p.add_argument("--input-clip", type=float, default=20.0)
     p.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    p.add_argument("--capacity-control", action="store_true",
+                   help="GRU-only hidden=106 matched-parameter control; separate output namespace")
     p.add_argument("--smoke-only", action="store_true",
                    help="one forward/backward pass without optimizer or writes")
     args = p.parse_args(argv)
