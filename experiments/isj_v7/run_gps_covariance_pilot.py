@@ -43,7 +43,8 @@ BEGIN = 3180
 # for h1/h2 on the final anchors, NOT additional FGO measurements.
 END = 3860
 EXPECTED_N = 4544
-CASES = ("fixed", "gru96_r", "gru106_r", "mamba_r", "mamba_r_u")
+CASES = ("fixed", "no_gps", "gru96_r", "gru106_r", "mamba_r", "mamba_r_u",
+         "mamba_mean_sigma", "mamba_perm_sigma")
 BASE_SIGMA = FourSensorFactorConfig().gps_fixed_sigma
 R_GAIN = 4.0
 EVIDENCE_GAIN = 0.5
@@ -78,6 +79,27 @@ def build_gps_sigmas(
             raise ValueError("invalid evidence U: require 680 values in [0,1]")
     return base_sigma * np.sqrt(1.0 + R_GAIN * (1.0 - r)
                                 + EVIDENCE_GAIN * e)
+
+
+def mamba_sigma_control(
+    raw_sigmas: np.ndarray, case: str, seed: int,
+) -> np.ndarray:
+    """Post-hoc diagnostic controls isolating mean versus temporal variation.
+
+    Fixed, deterministic permutation seed is independent of any GT metric.
+    Returns a fresh array and never edits the original Mamba predictions.
+    """
+    a = np.asarray(raw_sigmas, dtype=np.float64)
+    if (a.shape != (END - BEGIN,) or not np.isfinite(a).all()
+            or np.any(a <= 0)):
+        raise ValueError("invalid Mamba GPS sigma sequence")
+    if seed not in (43, 44, 45):
+        raise ValueError("sigma control is restricted to frozen dev seeds")
+    if case == "mamba_mean_sigma":
+        return np.full_like(a, float(a.mean()))
+    if case == "mamba_perm_sigma":
+        return np.random.default_rng(20261120 + seed).permutation(a)
+    raise ValueError("unknown mean/permutation control")
 
 
 def subgraph_measurements(m, *, begin=BEGIN, end=END):
@@ -123,7 +145,7 @@ def subgraph_measurements(m, *, begin=BEGIN, end=END):
 
 
 def get_development_run(candidate: dict, name: str, seed: int) -> dict | None:
-    if name == "fixed":
+    if name in ("fixed", "no_gps"):
         return None
     if name == "gru106_r":
         run = read_run(CAPACITY_OUTPUT, "gru", seed, candidate)
@@ -170,6 +192,8 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             (arrays["evidence_uncertainty"][:, 0]
              if case == "mamba_r_u" else None),
         )
+        if case in ("mamba_mean_sigma", "mamba_perm_sigma"):
+            sigma = mamba_sigma_control(sigma, case, seed)
         backend = "gru" if case.startswith("gru") else "mamba"
         path = (CAPACITY_OUTPUT if case == "gru106_r"
                 else DEFAULT_OUTPUT) / backend / f"seed_{seed}" / "val_predictions.npz"
@@ -182,15 +206,37 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         "reference_is_not_independent": True,
         "not_calibrated_covariance": True,
         "gps_sigma_mapping": (
-            "5m * sqrt(1 + 4*(1-r) + 0.5*U), "
-            "omit terms for reliability-only/fixed cases"
+            "none: GPS factors disabled" if case == "no_gps"
+            else "5m fixed" if case == "fixed"
+            else "mean over 680 Mamba-R sigmas" if case == "mamba_mean_sigma"
+            else "deterministically permuted Mamba-R sigma sequence"
+            if case == "mamba_perm_sigma"
+            else "5m * sqrt(1 + 4*(1-r) + 0.5*U) "
+                 "(U=0 for reliability-only)"
         ),
+        "control_class": (
+            "post_hoc_diagnostic_after_initial_FGO_result"
+            if case in ("no_gps", "mamba_mean_sigma", "mamba_perm_sigma")
+            else "initial_exploratory_pilot"
+        ),
+        "gps_factors_enabled": case != "no_gps",
+        "mamba_permutation_seed": (
+            20261120 + seed if case == "mamba_perm_sigma" else None
+        ),
+        "sigma_vector_used_for_gps_factors": case != "no_gps",
         "case": case,
         "seed": seed,
         "interval_half_open": [BEGIN, END],
         "frames": END - BEGIN,
-        "gating": "GPS only; IMU/LiDAR/Camera covariances fixed",
-        "used_head": "h0: GPS reliability predicted from observations <= t",
+        "gating": (
+            "GPS factors removed; IMU/LiDAR/Camera covariances fixed"
+            if case == "no_gps"
+            else "GPS sigma only; IMU/LiDAR/Camera covariances fixed"
+        ),
+        "used_head": (
+            "none" if case in ("fixed", "no_gps")
+            else "h0: GPS reliability predicted from observations <= t"
+        ),
         "prediction_archive_sha256": prediction_sha,
         "gps_measurement_archive_sha256": sha256(source),
         "dataset_archive_sha256": candidate["archive_sha256"],
@@ -198,17 +244,21 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             DEGRADED / "degraded_lidar_factor_data.npz"),
         "camera_factor_archive_sha256": sha256(
             DEGRADED / "degraded_camera_factor_data.npz"),
-        "sigma_min": float(sigma.min()),
-        "sigma_max": float(sigma.max()),
-        "sigma_mean": float(sigma.mean()),
-        "sigma_changed_fraction": float(np.mean(
-            np.abs(sigma - BASE_SIGMA) > 1e-6)),
+        "sigma_min": float(sigma.min()) if case != "no_gps" else None,
+        "sigma_max": float(sigma.max()) if case != "no_gps" else None,
+        "sigma_mean": float(sigma.mean()) if case != "no_gps" else None,
+        "sigma_changed_fraction": (
+            float(np.mean(np.abs(sigma - BASE_SIGMA) > 1e-6))
+            if case != "no_gps" else None
+        ),
         "notes": [
             "Historical 0027 VAL is already used to select networks and early stop; metrics are biased developmental diagnostics.",
             "The FGO uses all sensor observations inside the 680-frame VAL batch (offline future context); NOT an online claim.",
             "Synthetic GPS target is read only for file-provenance checks, never for covariance or factor construction.",
             "Saved clean OXTS-derived GPS reference is reused for evaluation only; NOT independent GNSS truth.",
             "0016/0020 held-out drives not accessed; 0027 post-VAL source rows may be loaded from the archived NPZ but are not used in this graph or its metrics.",
+            "No-GPS and Mamba sigma controls added AFTER seeing seed43 Fixed/Mamba-R outcomes. These are exploratory, not prespecified confirmatory tests.",
+            "The constant-mean control preserves mean Mamba sigma, and permutation preserves the full empirical sigma distribution while breaking its time alignment.",
         ],
     }
     return sigma, metadata
@@ -251,13 +301,14 @@ def run(case: str, seed: int, *, preflight_only: bool) -> dict:
         raise FileExistsError(f"refuse overwrite of {destination}")
     m = load_degraded_four_sensor_measurements(DEGRADED)
     sub = subgraph_measurements(m)
-    # All four FGO variants run from the same initial LiDAR trajectory
-    # with identical initial prior and fixed other-sensor covariances.
-    # The sole varying graph input is the explicit GPS sigma vector.
+    # All variants retain the same LiDAR-based initialization,
+    # initial anchor and unchanged IMU/LiDAR/Camera covariances.
+    # No-GPS control removes GPS factors entirely (zero GPS factors).
     result, poses, counts = run_four_sensor_factor_graph(
         sub, destination, mode="fixed",
-        gps_sigmas_override=sigma,
-        use_gps=True, use_imu=True, use_lidar=True, use_camera=True,
+        gps_sigmas_override=(None if case == "no_gps" else sigma),
+        use_gps=(case != "no_gps"),
+        use_imu=True, use_lidar=True, use_camera=True,
     )
     if (result.shape != (END-BEGIN, 3) or poses.shape != (END-BEGIN, 4, 4)
             or not np.isfinite(result).all()):
@@ -271,7 +322,8 @@ def run(case: str, seed: int, *, preflight_only: bool) -> dict:
     metadata["evaluation"] = evaluation
     metadata["trajectory_sha256"] = sha256(destination / "trajectory.txt")
     metadata["status"] = "COMPLETE_DEVELOPMENT_PILOT"
-    np.save(destination / "gps_sigmas.npy", sigma)
+    if case != "no_gps":
+        np.save(destination / "gps_sigmas.npy", sigma)
     (destination / "pilot_metrics.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

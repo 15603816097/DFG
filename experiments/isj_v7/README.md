@@ -500,3 +500,50 @@ both raw-tail frames 3860/3861 to detect accidental graph leakage.
 The source supervision/provenance manifest and held-out restrictions
 remain unchanged. All Stage-8 optimization still requires an explicit
 `--run-pilot` flag after read-only preflight.
+
+
+## Stage 8 follow-up: post-hoc GPS sigma controls after seed43
+
+After the first seed43 680-frame offline FGO runs, Fixed GPS=5m scored
+3.4751m 3D and 3.1339m 2D local-origin OXTS-relative RMSE;
+Mamba-R scored 3.3248m 3D and 2.7589m 2D, a 4.32% and 11.97%
+reduction, **but** 1-frame / 10-frame relative displacement
+RMSE worsened from 0.1972 / 1.3437m to 0.2018 / 1.4111m.
+
+Mamba-R also changed *every* GPS sigma from 5m fixed to 5.44–10.71m
+(mean 7.25m). Thus improvement may be due to downweighting GPS
+globally rather than learning meaningful temporal weights.
+
+Three **post-hoc** controls were added *after seeing these results*.
+Treat them as exploratory diagnostics, not preregistered confirmation:
+- `mamba_mean_sigma`: GPS sigma constant at mean Mamba-R sigma for
+  this seed, preserving mean sigma (not mean precision) while removing time dynamics.
+- `mamba_perm_sigma`: deterministic shuffled original Mamba-R sigma
+  values; preserves full distribution, destroys the time alignment.
+  Fixed RNG seed `20261120 + training_seed`, independent of GT.
+- `no_gps`: removes GPS factors entirely, leaving the same other
+  sensor factors and initial anchor.
+
+They are separate write-once outputs; existing Fixed/Mamba-R
+results will NOT be overwritten. `mamba_r_u`, `gru96_r` and
+`gru106_r` continue to be available for subsequent ablations.
+
+Run on existing seed43 after all V7 tests pass:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+for case in mamba_mean_sigma mamba_perm_sigma no_gps; do
+  python -u -m experiments.isj_v7.run_gps_covariance_pilot \
+    --case "$case" --seed 43
+done
+# If these read-only preflights all pass, explicitly add --run-pilot
+# for new cases only; do not rerun seed43/fixed or seed43/mamba_r.
+~~~
+
+The reference remains non-independent OXTS/GPS. FGO still optimizes
+the entire 680-frame VAL batch, not online/incremental iSAM2. The
+resulting changes are not evidence of independent localization
+accuracy or variance calibration.

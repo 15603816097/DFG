@@ -171,3 +171,43 @@ def test_fgo_interval_matches_exactly_680_h0_validation_anchors():
     )
     assert sub.gps_local[-1, 0] == pytest.approx(
         m.gps_local[3859, 0] - m.gps_local[3180, 0])
+
+
+
+def test_mamba_mean_sigma_keeps_mean_but_removes_timing():
+    source = np.linspace(5.1, 10.2, 680)
+    outcome = pilot.mamba_sigma_control(source, "mamba_mean_sigma", 43)
+    assert outcome.shape == source.shape
+    assert np.all(outcome == np.mean(source))
+    assert np.mean(outcome) == pytest.approx(np.mean(source))
+    assert not np.shares_memory(source, outcome)
+
+
+def test_mamba_permutation_preserves_values_not_time_alignment():
+    source = np.linspace(5.1, 10.2, 680)
+    one = pilot.mamba_sigma_control(source, "mamba_perm_sigma", 43)
+    two = pilot.mamba_sigma_control(source, "mamba_perm_sigma", 43)
+    assert np.array_equal(one, two)
+    assert np.array_equal(np.sort(one), np.sort(source))
+    assert not np.array_equal(one, source)
+    assert not np.shares_memory(source, one)
+    assert np.array_equal(source, np.linspace(5.1, 10.2, 680))
+
+
+def test_mamba_sigma_controls_fail_on_missing_or_invalid_source():
+    with pytest.raises(ValueError, match="invalid Mamba"):
+        pilot.mamba_sigma_control(np.ones(682), "mamba_mean_sigma", 43)
+    with pytest.raises(ValueError, match="invalid Mamba"):
+        pilot.mamba_sigma_control(np.full(680, np.nan), "mamba_perm_sigma", 43)
+    with pytest.raises(ValueError, match="frozen dev seeds"):
+        pilot.mamba_sigma_control(np.ones(680), "mamba_perm_sigma", 42)
+    with pytest.raises(ValueError, match="unknown mean"):
+        pilot.mamba_sigma_control(np.ones(680), "unapproved", 43)
+
+
+def test_posthoc_cases_are_explicit_and_preflight_only(monkeypatch, tmp_path):
+    for name in ("no_gps", "mamba_mean_sigma", "mamba_perm_sigma"):
+        assert name in pilot.CASES
+    assert pilot.get_development_run({}, "no_gps", 43) is None
+    for name in ("no_gps", "mamba_mean_sigma", "mamba_perm_sigma"):
+        assert not (tmp_path / name).exists()
