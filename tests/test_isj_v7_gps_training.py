@@ -253,3 +253,130 @@ def test_frozen_inference_invalid_dimensions_scaler_and_short_input():
         with pytest.raises(ValueError, match="invalid V7 causal"):
             trainer.predict_frozen_gps_features_causally(
                 model, xx, mm, qq, **opts)
+
+
+def _synthetic_frozen_gru_checkpoint(tmp_path, monkeypatch):
+    """Generated solely inside pytest's temp directory, no KITTI access."""
+    dest, data, source_meta = _synth_dev(tmp_path)
+    monkeypatch.setattr(trainer, "DEFAULT_DEST", dest)
+    run_root = tmp_path / "frozen_runs"
+    monkeypatch.setattr(trainer, "DEFAULT_OUTPUT", run_root)
+    folder = run_root / "gru" / "seed_43"
+    folder.mkdir(parents=True)
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=96,
+        layers=2, horizon=3, dropout=.1,
+    )
+    src_sha = trainer.file_sha(dest / "gps_train_val.npz")
+    meta_sha = trainer.file_sha(dest / "provenance.json")
+    config = {
+        "seed": 43, "hidden": 96, "layers": 2, "dropout": .1,
+        "window": 64, "heads": [0, 1, 2], "input_clip": 20.0,
+    }
+    metrics = {
+        "schema": "isj_v7_dev_gps_trainval_baseline_v1",
+        "backend": "gru", "run_family": "baseline",
+        "parameter_count": trainer.parameter_count(model),
+        "development_only": True,
+        "approved_for_final_training": False,
+        "independent_test_run": False,
+        "validation_is_from_0027_development": True,
+        "dataset_sha256": src_sha,
+        "dataset_manifest_sha256": meta_sha,
+        "config": config,
+        "git_commit": "synthetic-unit-test",
+    }
+    state = {
+        "model_state_dict": model.state_dict(),
+        "backend": "gru", "run_family": "baseline",
+        "model_kwargs": {
+            "backend": "gru", "input_dim": 21, "hidden": 96,
+            "layers": 2, "horizon": 3, "dropout": .1,
+        },
+        "train_median": data["train_median"],
+        "train_iqr": data["train_iqr"],
+        "development_only": True,
+        "approved_for_final_training": False,
+        "dataset_sha256": src_sha,
+        "manifest_sha256": meta_sha,
+        "git_commit": "synthetic-unit-test",
+    }
+    torch.save(state, folder / "best.pt")
+    (folder / "metrics.json").write_text(json.dumps(metrics))
+    return folder, data, state, metrics
+
+
+def test_frozen_checkpoint_loader_strict_and_read_only(tmp_path, monkeypatch):
+    folder, data, _, _ = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    before_files = sorted(str(p) for p in tmp_path.rglob("*") if p.is_file())
+    model, center, scale, info = trainer.load_frozen_v7_gps_checkpoint(
+        "gru96_r", seed=43, device="cpu",
+    )
+    after_files = sorted(str(p) for p in tmp_path.rglob("*") if p.is_file())
+    assert before_files == after_files
+    assert not model.training
+    assert info["checkpoint_sha256"] == trainer.file_sha(folder / "best.pt")
+    assert info["model_is_development_only"] is True
+    assert info["opened_heldout_sensor_content"] is False
+    assert info["parameters"] == 114630
+    assert np.array_equal(center, data["train_median"])
+    assert np.array_equal(scale, data["train_iqr"])
+    features = data["gps_features"][:69]
+    anchors, pred, uncertainty = (
+        trainer.predict_frozen_gps_features_causally(
+            model, features, center, scale, clip=info["input_clip"],
+        )
+    )
+    assert np.array_equal(anchors, np.arange(63, 69))
+    assert pred.shape == uncertainty.shape == (6, 3)
+
+
+def test_frozen_checkpoint_loader_rejects_scaler_disagreement(
+        tmp_path, monkeypatch):
+    folder, _, state, _ = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    tampered = dict(state)
+    tampered["train_median"] = np.asarray(
+        state["train_median"] + 3., dtype=np.float32)
+    torch.save(tampered, folder / "best.pt")
+    with pytest.raises(ValueError, match="scaler is not train-only"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=43, device="cpu",
+        )
+
+
+def test_frozen_checkpoint_loader_rejects_untrusted_metadata_and_paths(
+        tmp_path, monkeypatch):
+    folder, _, _, metrics = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    for case in ("legacy", "mamba_r_cap4", "../gru96_r"):
+        with pytest.raises(ValueError, match="unapproved V7"):
+            trainer.load_frozen_v7_gps_checkpoint(
+                case, seed=43, device="cpu",
+            )
+    with pytest.raises(ValueError, match="unapproved V7"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=42, device="cpu",
+        )
+    metrics["dataset_sha256"] = "unknown"
+    (folder / "metrics.json").write_text(json.dumps(metrics))
+    with pytest.raises(ValueError, match="unverified V7"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=43, device="cpu",
+        )
+
+
+def test_frozen_checkpoint_loader_fails_closed_on_non_checkpoint_bytes(
+        tmp_path, monkeypatch):
+    folder, _, _, _ = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    (folder / "best.pt").write_bytes(b"Not a pytorch checkpoint")
+    with pytest.raises(ValueError, match="no pickle fallback"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=43, device="cpu",
+        )

@@ -195,6 +195,139 @@ def predict_frozen_gps_features_causally(
     return anchors, pred, u
 
 
+
+def load_frozen_v7_gps_checkpoint(
+    case: str,
+    *,
+    seed: int = 43,
+    device: str = "auto",
+) -> tuple[ReliabilityForecastV7, np.ndarray, np.ndarray, dict]:
+    """Load ONLY an existing locally produced V7 checkpoint, read-only.
+
+    Verifies checkpoint model architecture, dataset hashes and train-only
+    preprocessing against the frozen 0027 development archive. Never
+    retrains, reads new drive measurements, or opens heldout sequences.
+
+    NumPy arrays in pre-existing training checkpoints require an explicit
+    restricted NumPy allowlist with PyTorch weights_only=True; do not
+    silently bypass weights-only loading with unsafe pickle.
+    """
+    cases = {
+        "gru96_r": ("gru", 96, DEFAULT_OUTPUT, 114630, "baseline"),
+        "gru106_r": ("gru", 106, CAPACITY_OUTPUT, 139290,
+                     "capacity_gru_h106"),
+        "mamba_r": ("mamba", 96, DEFAULT_OUTPUT, 139590, "baseline"),
+    }
+    if case not in cases or seed not in (43, 44, 45):
+        raise ValueError("unapproved V7 frozen checkpoint case/seed")
+    backend, hidden, root, params, family = cases[case]
+    folder = root / backend / f"seed_{seed}"
+    checkpoint_path = folder / "best.pt"
+    metric_path = folder / "metrics.json"
+    if not checkpoint_path.is_file() or not metric_path.is_file():
+        raise FileNotFoundError(
+            f"frozen V7 checkpoint/metrics missing for {case} seed={seed}")
+    # Only original same-source TRAIN+VAL development metadata is read,
+    # never new heldout data. This function is a safe component loader,
+    # NOT authorization to evaluate a heldout drive.
+    data, source = load_dev_data(DEFAULT_DEST)
+    metrics = json.loads(metric_path.read_text(encoding="utf-8"))
+    cfg = metrics.get("config", {})
+    if (metrics.get("schema") != "isj_v7_dev_gps_trainval_baseline_v1"
+            or metrics.get("backend") != backend
+            or metrics.get("run_family") != family
+            or metrics.get("parameter_count") != params
+            or metrics.get("development_only") is not True
+            or metrics.get("approved_for_final_training") is not False
+            or metrics.get("independent_test_run") is not False
+            or metrics.get("validation_is_from_0027_development") is not True
+            or metrics.get("dataset_sha256") != source["archive_sha256"]
+            or metrics.get("dataset_manifest_sha256")
+                 != source["manifest_sha256"]
+            or cfg.get("seed") != seed
+            or cfg.get("hidden") != hidden
+            or cfg.get("layers") != 2
+            or cfg.get("window") != 64
+            or cfg.get("heads") != [0, 1, 2]
+            or not isinstance(cfg.get("dropout"), (int, float))
+            or not isinstance(cfg.get("input_clip"), (int, float))
+            or not (0 <= cfg["dropout"] < 1)
+            or not np.isfinite(cfg["input_clip"])
+            or cfg["input_clip"] <= 0):
+        raise ValueError("unverified V7 frozen model metrics/provenance")
+    # The original training uses torch.save with NumPy float32 scalers.
+    # Explicitly allow only known benign NumPy array reconstruction
+    # primitives, preserving weights_only=True and refusing arbitrary
+    # Python object deserialization.
+    from numpy.core.multiarray import _reconstruct
+    safe_numpy_types = [
+        (_reconstruct, "numpy.core.multiarray._reconstruct"),
+        (_reconstruct, "numpy._core.multiarray._reconstruct"),
+        np.ndarray, np.dtype, np.dtypes.Float32DType,
+    ]
+    try:
+        with torch.serialization.safe_globals(safe_numpy_types):
+            state = torch.load(
+                checkpoint_path, map_location="cpu", weights_only=True)
+    except Exception as exc:
+        raise ValueError(
+            "unreadable/unsafe frozen V7 checkpoint; no pickle fallback"
+        ) from exc
+    if not isinstance(state, dict) or set(state) != {
+        "model_state_dict", "backend", "run_family", "model_kwargs",
+        "train_median", "train_iqr", "development_only",
+        "approved_for_final_training", "dataset_sha256",
+        "manifest_sha256", "git_commit",
+    }:
+        raise ValueError("invalid frozen checkpoint keys")
+    expected_kwargs = {
+        "backend": backend, "input_dim": 21, "hidden": hidden,
+        "layers": 2, "horizon": 3, "dropout": cfg["dropout"],
+    }
+    if (state["model_kwargs"] != expected_kwargs
+            or state["backend"] != backend
+            or state["run_family"] != family
+            or state["development_only"] is not True
+            or state["approved_for_final_training"] is not False
+            or state["dataset_sha256"] != source["archive_sha256"]
+            or state["manifest_sha256"] != source["manifest_sha256"]
+            or state["git_commit"] != metrics.get("git_commit")):
+        raise ValueError("frozen checkpoint/model metadata disagreement")
+    median = np.asarray(state["train_median"], dtype=np.float32)
+    iqr = np.asarray(state["train_iqr"], dtype=np.float32)
+    if (median.shape != (21,) or iqr.shape != (21,)
+            or not np.array_equal(median, data["train_median"])
+            or not np.array_equal(iqr, data["train_iqr"])):
+        raise ValueError("frozen checkpoint scaler is not train-only")
+    if (not isinstance(state["model_state_dict"], dict)
+            or not all(isinstance(v, torch.Tensor)
+                       for v in state["model_state_dict"].values())):
+        raise ValueError("invalid frozen checkpoint tensor state")
+    target = choose_device(device, backend)
+    model = ReliabilityForecastV7(**expected_kwargs)
+    model.load_state_dict(state["model_state_dict"], strict=True)
+    if parameter_count(model) != params:
+        raise ValueError("incorrect frozen V7 network parameter count")
+    model.to(target)
+    model.eval()
+    provenance = {
+        "case": case,
+        "seed": seed,
+        "backend": backend,
+        "parameters": params,
+        "checkpoint_sha256": file_sha(checkpoint_path),
+        "metrics_sha256": file_sha(metric_path),
+        "dataset_sha256": source["archive_sha256"],
+        "model_git_commit": metrics["git_commit"],
+        "input_clip": float(cfg["input_clip"]),
+        "window": 64,
+        "prediction_offsets": [0, 1, 2],
+        "model_is_development_only": True,
+        "opened_heldout_sensor_content": False,
+    }
+    return model, median.copy(), iqr.copy(), provenance
+
+
 class WindowDataset(Dataset):
     def __init__(
         self, x: np.ndarray, anchors: np.ndarray, targets: np.ndarray,

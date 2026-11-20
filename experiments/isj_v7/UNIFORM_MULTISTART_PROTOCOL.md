@@ -420,3 +420,68 @@ Next permissible operations: read only **filesystem metadata** for
 existing V7 training source code and run synthetic unit tests.
 **No 0016/0020 sensor contents, ground truth or metrics** should be
 inspected at this readiness stage.
+
+## Stage 15 — frozen V7 checkpoint loading gate (no heldout content)
+
+Existing V7 training checkpoints include PyTorch state_dict plus NumPy
+train-prefix median/IQR scalers. With modern torch.load defaults,
+these older NumPy-containing checkpoint files need explicit allowlisting
+to remain compatible with weights_only=True. NEVER use
+weights_only=False or arbitrary pickle fallback.
+
+The original train_gps_dev.py now provides
+`load_frozen_v7_gps_checkpoint(case,seed,device)` for
+gru96_r, gru106_r, and mamba_r, with a strict allowlist.
+It verifies the frozen training archive and its provenance hashes,
+checkpoint/backend/model kwargs/parameter counts, saved
+metric fingerprints and strict model tensor state. It compares the
+stored normalization scalers bit-for-bit to the frozen train prefix.
+It returns the model, scalers, and checkpoint/metric SHA256s with
+no new-sequence data or reference loaded, and no training/writes.
+
+The original checkpoints are development-only models; loading them
+does not confer final-paper training approval or independent evidence.
+Untrusted checkpoint sources must not be processed.
+
+Read-only synthetic regression and actual saved-model loading gate:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+echo V7_TEST_EXIT=$?
+python - <<'PY'
+from experiments.isj_v7.train_gps_dev import (
+    load_frozen_v7_gps_checkpoint,
+)
+for case in ('gru96_r', 'gru106_r', 'mamba_r'):
+    model, train_median, train_iqr, provenance = (
+        load_frozen_v7_gps_checkpoint(
+            case, seed=43, device='auto',
+        )
+    )
+    print(
+        'FROZEN_MODEL_READY',
+        case,
+        'backend=', provenance['backend'],
+        'device=', next(model.parameters()).device,
+        'parameters=', provenance['parameters'],
+        'checkpoint_sha256=', provenance['checkpoint_sha256'],
+        'metrics_sha256=', provenance['metrics_sha256'],
+        'data_sha256=', provenance['dataset_sha256'],
+        'scaler_shape=', train_median.shape,
+        'iqr_min=', float(train_iqr.min()),
+        flush=True,
+    )
+print('FROZEN_MODEL_LOAD_GATE_COMPLETE; NO_HELDOUT_READ')
+PY
+~~~
+
+The model artifact is not exported or rewritten. This tests real
+locally saved checkpoint readability but does NOT read 0016/0020
+measurements. If the saved Mamba checkpoint requires a different
+installed CUDA/mamba_ssm runtime, report the error rather than
+substituting GRU. Actual V7 four-sensor heldout data preparation
+is still gated by date-specific calibration and a frozen degradation
+and optimization protocol.
