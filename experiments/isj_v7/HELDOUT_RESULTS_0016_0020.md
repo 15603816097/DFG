@@ -88,3 +88,32 @@ The current evidence does **not** justify a claim that Mamba is the
 superior or generally robust method. Do not tune on 0016/0020
 after observing these scores. Any additional confirmatory study
 requires newly declared data and, ideally, independent ground truth.
+
+## Post-run archive integrity verification (2026-11-20)
+
+The user executed the read-only local archive validation after
+recovery completed. The script verified that the score report exists,
+`RUN_INCOMPLETE` does not exist, exactly the 0016 and 0020 drives
+and four expected cases are present, each case's numerical solver
+reported `stabilized=True`, the report explicitly records
+`independent_physical_gt=False` and
+`recovered_from_interrupted_initial_release=True`.
+
+Confirmed file-level SHA256 digests (calculated on the Ubuntu server):
+
+| Archive file | SHA256 |
+|---|---|
+| `results/isj_v7/heldout_cap4_v1/heldout_scores.json` | `acc333e491e3ed189d04bc5c6082f1d609342823b6a3c1114459e06c1be82589` |
+| `results/isj_v7/heldout_cap4_v1/0016/build_manifest.json` | `99f617050e1df40e6eb4ceacfc2c3d0fcd05876791b6399cdcb8d0b9bbfbb268` |
+| `results/isj_v7/heldout_cap4_v1/0020/build_manifest.json` | `7e60a9250fb284e96c80ffdf6926f8de7e7a4b0cf6751326ce07fd70f4161517` |
+
+Final printed marker: `V7_HELDOUT_ARCHIVE_AUDIT_PASSED`.
+No solver execution, retraining, reference recalculation, or
+changes to reserved results were made by this archive check.
+
+**Freeze boundary:** Do not retune or rerun on 0016/0020 after
+observing the results. The 0020 timestamp exception remains
+explicitly post-release. This archive verification confirms
+file identity and reported metadata, not independent physical
+ground truth, global optimality, forecast-head benefit, or
+statistical superiority of Mamba over GRU.
