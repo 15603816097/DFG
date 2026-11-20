@@ -260,10 +260,15 @@ def load_frozen_v7_gps_checkpoint(
     # primitives, preserving weights_only=True and refusing arbitrary
     # Python object deserialization.
     from numpy.core.multiarray import _reconstruct
+    # PyTorch 2.4 (the frozen V7 server runtime) only accepts actual
+    # functions/classes in safe_globals, not (callable, qualified_name)
+    # tuples supported by newer PyTorch releases. The NumPy object
+    # carries its own module/name for the active NumPy version.
     safe_numpy_types = [
-        (_reconstruct, "numpy.core.multiarray._reconstruct"),
-        (_reconstruct, "numpy._core.multiarray._reconstruct"),
-        np.ndarray, np.dtype, np.dtypes.Float32DType,
+        _reconstruct,
+        np.ndarray,
+        np.dtype,
+        np.dtypes.Float32DType,
     ]
     try:
         with torch.serialization.safe_globals(safe_numpy_types):
