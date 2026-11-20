@@ -131,6 +131,70 @@ def load_dev_data(root: Path = DEFAULT_DEST) -> tuple[dict, dict]:
     return data, metadata
 
 
+
+def predict_frozen_gps_features_causally(
+    model: torch.nn.Module,
+    features: np.ndarray,
+    train_median: np.ndarray,
+    train_iqr: np.ndarray,
+    *,
+    window: int = 64,
+    clip: float = 20.0,
+    batch_size: int = 64,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Reference-independent, read-only inference on a 21D GPS feature stream.
+
+    Same V7 train-only normalization and chronological windows as training.
+    Returns (anchors, reliability, evidence_proxy) with h0/h1/h2 columns.
+    Only anchors >= window-1 are legal: no padded/fabricated first 63
+    predictions. A target sequence's labels/clean GPS/other-sensor data
+    are never arguments. THIS IS NOT a held-out evaluation entrypoint.
+    """
+    x = np.asarray(features, dtype=np.float32)
+    median = np.asarray(train_median, dtype=np.float32)
+    iqr = np.asarray(train_iqr, dtype=np.float32)
+    if (x.ndim != 2 or x.shape[1] != 21 or len(x) < window
+            or median.shape != (21,) or iqr.shape != (21,)
+            or not np.isfinite(x).all() or not np.isfinite(median).all()
+            or not np.isfinite(iqr).all() or np.any(iqr <= 0)
+            or window != 64 or batch_size < 1
+            or not np.isfinite(clip) or clip <= 0):
+        raise ValueError("invalid V7 causal GPS inference input/scaler")
+    anchors = np.arange(window - 1, len(x), dtype=np.int64)
+    z = np.clip((x - median) / iqr, -clip, clip)
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = torch.device("cpu")
+    predictions, uncertainties = [], []
+    was_training = bool(model.training)
+    model.eval()
+    try:
+        with torch.inference_mode():
+            for left in range(0, len(anchors), batch_size):
+                ids = anchors[left:left + batch_size]
+                windows = np.stack(
+                    [z[i - window + 1:i + 1] for i in ids], axis=0,
+                ).astype(np.float32, copy=False)
+                xx = torch.from_numpy(windows).to(device)
+                outputs = model(xx)
+                predictions.append(
+                    outputs["reliability"].detach().float().cpu().numpy())
+                uncertainties.append(
+                    outputs["uncertainty"].detach().float().cpu().numpy())
+    finally:
+        model.train(was_training)
+    pred = np.concatenate(predictions, axis=0)
+    u = np.concatenate(uncertainties, axis=0)
+    expected = (len(anchors), 3)
+    if (pred.shape != expected or u.shape != expected
+            or not np.isfinite(pred).all() or not np.isfinite(u).all()
+            or np.any((pred <= 0) | (pred >= 1))
+            or np.any((u <= 0) | (u > 1))):
+        raise ValueError("invalid V7 h0/h1/h2 prediction output")
+    return anchors, pred, u
+
+
 class WindowDataset(Dataset):
     def __init__(
         self, x: np.ndarray, anchors: np.ndarray, targets: np.ndarray,

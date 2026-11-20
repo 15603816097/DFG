@@ -366,3 +366,57 @@ Full source code/protocol implementation remains versioned under
 Git commit a0056b95b15c53b5f4926cfa0a61e39a040918c0, with
 Cap4 reference analysis saved in
 `logs/isj_v7_cap4_multistart_seed43.log` on the user's server.
+
+
+
+## Stage 14 — closed held-out inventory and causal inference adapter
+
+User's **metadata-only**, no-content inventory confirmed the following:
+- KITTI 2011_09_30_drive_0016_sync: 279 files in each of OXTS,
+  Velodyne, left camera and right camera directories.
+- KITTI 2011_09_30_drive_0020_sync: 1104 files in each of the
+  same four sensor directories.
+- Both dates are 2011_09_30, **different from development
+  2011_10_03**, so neither reuse of that calibration directory nor
+  the old Stage7 `DATE_DIR=2011_10_03` config is acceptable.
+
+File counts do **not** prove valid timestamps, calibration, frame
+alignment, generated factors, or independent trajectory truth. Both
+held-out streams remain closed until implementation and release gates.
+
+New reusable function in the *existing*
+`experiments/isj_v7/train_gps_dev.py`:
+`predict_frozen_gps_features_causally(model, features, train_median,
+train_iqr, window=64, clip=20, batch_size=64)`.
+
+- Takes a **degraded-GPS-only 21D feature stream** (same V7
+  `src.multisensor_reliability.features.gps_features`),
+  **training-only frozen median/IQR**, and an existing pretrained
+  GRU/Mamba model; never reads target clean GPS, labels or GT.
+- Returns full h0/h1/h2 predictions and Beta evidence proxies only at
+  chronological anchor indices `63..n-1`; does not fabricate
+  predictions for the cold-start first 63 frames.
+- Uses window `[t-63..t]` with no future features; pure in-memory
+  read-only processing with immutable model checkpoint and batch
+  size independent predictions, enforced by new synthetic regression
+  tests (future mutation, invalid scalers and cold-start policy).
+- This is a **component**, not a held-out inference CLI, independent
+  evaluation or approved final FGO. It has not read 0016/0020 contents.
+
+Before the actual cross-sequence V7 release, remaining implementation
+work includes: securely loading/validating frozen model checkpoints,
+injecting synthetic GPS noise using an explicitly frozen recipe on
+new drives, building same-definition four-sensor factors with each
+drive's correct date-specific calibration, no 0027 saved-pose initial
+states, a 63-frame cold-start policy shared by all methods, a frozen
+optimizer budget that is feasible for these lengths, and an audited
+test-once reference/evaluation protocol. Do not quietly substitute the
+old Stage7 V5/V6 estimator, which has different training/measurement
+provenance.
+
+Next permissible operations: read only **filesystem metadata** for
+`dataset/kitti/2011_09_30/calib_cam_to_cam.txt`,
+`calib_imu_to_velo.txt`, and `calib_velo_to_cam.txt`, inspect
+existing V7 training source code and run synthetic unit tests.
+**No 0016/0020 sensor contents, ground truth or metrics** should be
+inspected at this readiness stage.

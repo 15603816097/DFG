@@ -185,3 +185,71 @@ def test_mamba_backend_cannot_silently_use_cpu():
     with pytest.raises(RuntimeError, match="requires NVIDIA CUDA"):
         trainer.choose_device("cpu", "mamba")
     assert trainer.choose_device("cpu", "gru").type == "cpu"
+
+
+def test_frozen_inference_matches_training_window_and_excludes_cold_start():
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8,
+        layers=1, horizon=3, dropout=0.,
+    )
+    model.eval()
+    features = np.arange(80 * 21, dtype=np.float32).reshape(80, 21) / 500.
+    median = np.zeros(21, dtype=np.float32)
+    iqr = np.ones(21, dtype=np.float32)
+    anchors, r, u = trainer.predict_frozen_gps_features_causally(
+        model, features, median, iqr, batch_size=7,
+    )
+    assert np.array_equal(anchors, np.arange(63, 80))
+    assert r.shape == (17, 3)
+    assert u.shape == (17, 3)
+    assert np.all((r > 0) & (r < 1))
+    with torch.inference_mode():
+        direct = model(torch.from_numpy(features[:64][None]))
+    assert np.allclose(r[0], direct["reliability"].numpy(), atol=1e-7)
+
+
+def test_frozen_inference_prefix_invariance_no_future_leakage():
+    torch.manual_seed(902)
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8, layers=1,
+        horizon=3, dropout=.0,
+    )
+    rng = np.random.default_rng(23)
+    full = rng.normal(size=(116, 21)).astype(np.float32)
+    mean = rng.normal(size=21).astype(np.float32)
+    iqr = np.ones(21, dtype=np.float32)
+    aa, ar, au = trainer.predict_frozen_gps_features_causally(
+        model, full, mean, iqr, batch_size=16,
+    )
+    tampered = full.copy()
+    tampered[95:] = 1e6
+    bb, br, bu = trainer.predict_frozen_gps_features_causally(
+        model, tampered, mean, iqr, batch_size=3,
+    )
+    # t<=94 cannot use future features >=95, even across batches.
+    assert np.array_equal(aa, bb)
+    assert np.allclose(ar[aa <= 94], br[bb <= 94], atol=1e-6)
+    assert np.allclose(au[aa <= 94], bu[bb <= 94], atol=1e-6)
+    assert not np.allclose(ar[aa >= 95], br[bb >= 95])
+
+
+def test_frozen_inference_invalid_dimensions_scaler_and_short_input():
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8, layers=1, dropout=0.,
+    )
+    x = np.ones((70, 21), dtype=np.float32)
+    m = np.zeros(21, dtype=np.float32)
+    q = np.ones(21, dtype=np.float32)
+    invalid = [
+        (x[:63], m, q, {}),
+        (x[:, :20], m, q, {}),
+        (x, m[:20], q, {}),
+        (x, m, np.zeros(21), {}),
+        (np.full_like(x, np.nan), m, q, {}),
+        (x, m, q, {"window": 63}),
+        (x, m, q, {"batch_size": 0}),
+    ]
+    for xx, mm, qq, opts in invalid:
+        with pytest.raises(ValueError, match="invalid V7 causal"):
+            trainer.predict_frozen_gps_features_causally(
+                model, xx, mm, qq, **opts)
