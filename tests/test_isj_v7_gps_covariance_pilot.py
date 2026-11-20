@@ -751,3 +751,191 @@ def test_reserved_v7_gtsam_optimization_has_common_solver_budget(tmp_path):
     assert np.isfinite(solved["objective"])
     assert 1 <= len(solved["passes"]) <= 12
     assert not (tmp_path / "unused").exists()
+
+
+def _synthetic_clock_stream(n, *, offset=-.005):
+    return np.arange(n, dtype=np.float64) * .10 + offset
+
+
+def test_0020_startup_time_audit_accepts_only_documented_three_frame_pattern():
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    n = sealed.EXPECTED_FRAMES["0020"]
+    base = _synthetic_clock_stream(n, offset=0.)
+    streams = {}
+    for name, early in (
+        ("velodyne", -.123113),
+        ("left-camera", -.124902),
+        ("right-camera", -.125527),
+    ):
+        arr = _synthetic_clock_stream(n)
+        arr[:3] = base[:3] + early
+        streams[name] = arr
+    result = sealed.validate_frozen_time_alignment(
+        "0020", base, streams,
+    )
+    assert result["startup_exception_applied"]
+    assert result["truncated_frames"] == 0
+    assert result["frame_ids_unchanged"]
+    assert result["timestamps_unchanged"]
+    for v in result["modalities"].values():
+        assert v["exceed_100ms_indices"] == [0, 1, 2]
+
+
+def test_time_audit_rejects_unexplained_late_offsets_and_0016_exception():
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    n = 1104
+    base = _synthetic_clock_stream(n, offset=0.)
+    streams = {}
+    for name, early in (
+        ("velodyne", -.123113),
+        ("left-camera", -.124902),
+        ("right-camera", -.125527),
+    ):
+        a = _synthetic_clock_stream(n)
+        a[:3] = base[:3] + early
+        streams[name] = a
+    corrupted = {k:v.copy() for k,v in streams.items()}
+    # >100ms error while preserving strict monotonic timestamps.
+    corrupted["velodyne"][110] = base[110] - .101
+    with pytest.raises(ValueError, match="timestamp misalignment"):
+        sealed.validate_frozen_time_alignment("0020", base, corrupted)
+    corrupted = {k:v.copy() for k,v in streams.items()}
+    corrupted["velodyne"][0] = base[0] - .151
+    with pytest.raises(ValueError, match="timestamp misalignment"):
+        sealed.validate_frozen_time_alignment("0020", base, corrupted)
+    bad_start = {k:v.copy() for k,v in streams.items()}
+    bad_start["right-camera"][:3] = base[:3] - .145
+    with pytest.raises(ValueError, match="not shared"):
+        sealed.validate_frozen_time_alignment("0020", base, bad_start)
+    n = 279
+    base16 = _synthetic_clock_stream(n, offset=0.)
+    early16 = {
+        k:_synthetic_clock_stream(n) for k in (
+            "velodyne", "left-camera", "right-camera")
+    }
+    for arr in early16.values():
+        arr[:3] = base16[:3] - .12
+    with pytest.raises(ValueError, match="timestamp misalignment"):
+        sealed.validate_frozen_time_alignment("0016", base16, early16)
+
+
+def test_timestamp_audit_strict_normal_stream_no_exception():
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    n = 279
+    base = _synthetic_clock_stream(n, offset=0.)
+    streams = {
+        k: _synthetic_clock_stream(n, offset=v)
+        for k, v in (
+            ("velodyne", -.0045),
+            ("left-camera", -.0062),
+            ("right-camera", -.0067),
+        )
+    }
+    result = sealed.validate_frozen_time_alignment(
+        "0016", base, streams,
+    )
+    assert not result["startup_exception_applied"]
+    assert result["policy"] == "original_all_frames_max_100ms"
+
+
+def _fake_interrupted_reserved_root(tmp_path, monkeypatch):
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    dest = tmp_path / "sealed"
+    first = dest / "0016"
+    first.mkdir(parents=True)
+    (dest / "RUN_INCOMPLETE").write_text(
+        "Heldout released; do not rerun without audit.\n")
+    manifest = {
+        "schema": "v7_reserved_synthetic_four_sensor_v1",
+        "sequence": "0016", "frames": 279,
+        "date_calibration": "2011_09_30",
+        "degradation_seed": 20260826,
+        "status": "BUILT_NOT_EVALUATED",
+    }
+    import json
+    (first / "build_manifest.json").write_text(json.dumps(manifest))
+    for name in (
+        "degraded_sensor_data.npz", "evaluation_reference.npz",
+        "degraded_lidar_factor_data.npz",
+        "degraded_camera_factor_data.npz",
+    ):
+        (first / name).write_bytes(b"sealed-existing-data")
+    monkeypatch.setattr(sealed, "DEST", dest)
+    monkeypatch.setattr(
+        sealed, "metadata_only_preflight",
+        lambda: {"all_ready": True, "output_exists": True},
+    )
+    return sealed, dest, first
+
+
+def test_post_release_0020_recovery_reuses_0016_without_writes(
+        tmp_path, monkeypatch):
+    sealed, dest, first = _fake_interrupted_reserved_root(
+        tmp_path, monkeypatch,
+    )
+    preserved = {
+        p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in first.iterdir()
+    }
+    called = []
+    monkeypatch.setattr(sealed, "read_policy", lambda: {})
+    monkeypatch.setattr(sealed, "validate_policy", lambda x: None)
+    monkeypatch.setattr(
+        sealed, "load_train_axis_noise", lambda x: {"synthetic": True})
+    monkeypatch.setattr(sealed, "load_balanced_plan", lambda x: {})
+    def fake_build(seq, plan, out):
+        called.append(("build", seq))
+        out.mkdir()
+    def fake_finish(fit, *, recovered=False):
+        called.append(("finish", recovered))
+        return {"sealed": True}
+    monkeypatch.setattr(sealed, "_build_one", fake_build)
+    monkeypatch.setattr(sealed, "_finish_sealed_evaluation", fake_finish)
+    result = sealed.resume_interrupted_0020_startup()
+    assert result == {"sealed": True}
+    assert called == [("build", "0020"), ("finish", True)]
+    assert (dest / "RUN_INCOMPLETE").is_file()
+    assert all(
+        (p.read_bytes(), p.stat().st_mtime_ns) == preserved[p.name]
+        for p in first.iterdir()
+    )
+
+
+def test_post_release_recovery_never_overwrites_or_releases_twice(
+        tmp_path, monkeypatch):
+    sealed, dest, _ = _fake_interrupted_reserved_root(
+        tmp_path, monkeypatch,
+    )
+    (dest / "0020").mkdir()
+    with pytest.raises(RuntimeError, match="already exists"):
+        sealed.resume_interrupted_0020_startup()
+    (dest / "0020").rmdir()
+    (dest / "heldout_scores.json").write_text("{}")
+    with pytest.raises(RuntimeError, match="already exists"):
+        sealed.resume_interrupted_0020_startup()
+    (dest / "heldout_scores.json").unlink()
+    (dest / "RUN_INCOMPLETE").unlink()
+    with pytest.raises(RuntimeError, match="marker mismatch"):
+        sealed.resume_interrupted_0020_startup()
+
+
+def test_post_release_resume_cli_requires_separate_token(monkeypatch):
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    called = []
+    monkeypatch.setattr(
+        sealed, "resume_interrupted_0020_startup",
+        lambda: called.append("RESUME"),
+    )
+    with pytest.raises(SystemExit):
+        sealed.main(["--resume-0020-startup3"])
+    with pytest.raises(SystemExit):
+        sealed.main([
+            "--resume-0020-startup3",
+            "--release-token", "SEALED_V7_0016_0020",
+        ])
+    assert not called
+    sealed.main([
+        "--resume-0020-startup3",
+        "--release-token", "AUDITED_V7_0020_STARTUP3",
+    ])
+    assert called == ["RESUME"]

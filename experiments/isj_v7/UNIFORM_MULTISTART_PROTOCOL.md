@@ -670,3 +670,79 @@ the next step: first review tests and metadata-only preflight;
 then approve opening both reserved drives ONCE under the
 already version-controlled frozen protocol. This file/code commit
 must remain frozen before any test metric is inspected.
+
+## Stage 18 — 0020 early-timestamp forensic incident and audited recovery
+
+**THE RESERVED TEST WAS RELEASED AND INTERRUPTED. Do not describe it as
+unopened/pristine or as an unchanged predeclared evaluation.**
+Initial one-time run was from code commit 2bfeb6f on 2026-11-20.
+0016 finished its entire LiDAR/stereo data build (279 frames).
+0020 failed after reading timestamps but BEFORE reading OXTS positions,
+LiDAR point clouds or camera pixels, and BEFORE any solve
+because 0020/velodyne exceeded the original 100ms timestamp gate.
+The archive under results/isj_v7/heldout_cap4_v1/ contains
+RUN_INCOMPLETE and 0016's four sensor/factor archives and manifest;
+0020 has no build manifest or folder, and heldout_scores.json is absent.
+
+Read-only timestamp diagnostic *after release* found:
+- 0016: 279/279 frames, all 3 sensor streams strictly increasing and
+  no absolute OXTS offset >100ms (max 11.694ms).
+- 0020: 1104/1104 frames, all 3 sensor streams strictly increasing;
+  ALL exceeded 100ms at the SAME frame IDs [0, 1, 2] only.
+  Maximum absolute deltas: Velodyne .123113s, camera02 .124902s,
+  camera03 .125527s; p95 absolute deltas 9.021, 10.814, 11.371ms.
+- Zero index shift had the lowest median absolute difference across
+  all modalities; there is no global one-frame offset. This does NOT
+  prove the three opening frames are physically synchronized.
+- Only the timestamp audit was performed; no test metrics were read
+  or computed and no GRU/Mamba inference or FGO optimization ran.
+
+**Explicit POST-RELEASE engineering exception** in
+validate_frozen_time_alignment(): for 0020 ONLY, allow exactly
+frames [0, 1, 2] to have a shared negative [-150,-100) ms offset
+against OXTS *in all three modalities*. Their per-frame cross-modal
+spread must be <=10ms. All other frames and all of 0016 retain
+the existing <=100ms tolerance, strict monotonicity and frame IDs.
+No frame deletion, index realignment, timestamp rewrite, covariance
+retuning, model retraining, or GRU/Mamba/Cap4 optimizer changes.
+This threshold is a disclosed **post-hoc data compatibility fix**
+derived from observed heldout timestamps, not a train-only policy.
+
+`cross_sequence_v7.py` now provides
+`--resume-0020-startup3 --release-token AUDITED_V7_0020_STARTUP3`.
+It ONLY resumes from the existing original RUN_INCOMPLETE marker,
+checks preserved 0016 build provenance and all five required files,
+refuses an existing 0020 folder, score file or missing marker,
+and builds **0020 only**. It does not overwrite/recompute 0016.
+After both builds, it uses the SAME frozen four cases, covariance
+and shared LiDAR initial trajectory as the initial one-time protocol.
+Only after all eight solves does it open OXTS-relative reference
+and write evaluation scores. The report explicitly flags an
+interrupted first release and the timestamp policy exception.
+
+Reproducibility and citation caveat: 0020 has 3 initial frames whose
+inter-sensor time offsets exceed the original allowable maximum;
+these remain inside the graph and should be disclosed in the paper.
+An untouched independent physical benchmark is NOT established.
+
+**Required gate BEFORE invoking recovery:**
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+echo V7_TEST_EXIT=$?
+python - <<'PY'
+from pathlib import Path
+from experiments.isj_v7.cross_sequence_v7 import DEST
+print('RUN_INCOMPLETE=', (DEST/'RUN_INCOMPLETE').is_file())
+print('FIRST_BUILD=', (DEST/'0016'/'build_manifest.json').is_file())
+print('0020_ABSENT=', not (DEST/'0020').exists())
+print('SCORES_ABSENT=', not (DEST/'heldout_scores.json').exists())
+PY
+~~~
+
+Only when the 129 synthetic/unit tests and the four status indicators
+pass, the audited recovery command can be executed exactly ONCE.
+Do not delete or overwrite 0016, nor run the old `--release-all`.
