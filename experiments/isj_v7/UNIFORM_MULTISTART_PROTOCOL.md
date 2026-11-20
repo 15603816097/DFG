@@ -592,3 +592,81 @@ Note that this parity audit must not load 0027 internal TEST frames
 3862 onward, nor 0016/0020. If any parity mismatch occurs,
 do not proceed to heldout; investigate sensor realization,
 feature scaling/window alignment, checkpoint or inference runtime.
+
+## Stage 17 — sealed one-time 0016 + 0020 pipeline (PRE-RELEASE)
+
+**STATUS: NOT RELEASED.** The new durable entrypoint
+`experiments/isj_v7/cross_sequence_v7.py` combines the four-sensor
+sensor/factor producer, frozen saved GRU/Mamba inference, shared
+LiDAR-only initial pose, GTSAM LM solve and a delayed synthetic
+OXTS-relative evaluation for BOTH reserved drives. Unlike the older
+Stage7 pipeline, it imports the exact original 0027 four-sensor
+`corrupt_local_gps`, `corrupt_imu`, `corrupt_lidar`, `corrupt_camera`,
+the original `LidarOdometry`/`StereoVisualOdometry` hyperparameters,
+and the original `BodyFrameConverter` factor format. All original
+frozen V7 training inputs, 4x information cap, checkpoint SHA256
+verification and train-only noise mapping remain unchanged.
+
+### Predeclared heldout methodology (never tuned on reserved sequences)
+
+- Two drives RELEASED TOGETHER: 2011_09_30_drive_0016_sync
+  (279 frames) and 2011_09_30_drive_0020_sync (1104 frames).
+- Date-specific KITTI 2011_09_30 stereo and sensor extrinsics;
+  all four stream filename indices and modality timestamps checked.
+- Frozen 0027 degradation plan resampled once in normalized frame
+  time for each drive; same 20260826 corruption streams as original
+  0027, and same generated measurements for all four methods.
+- Four frozen methods: TRAIN Axis-Fixed, GRU96-Cap4,
+  GRU106-Cap4 (capacity matched), Mamba-Cap4 (seed 43).
+- Model window 64; first 63 GPS factors use common fixed-axis
+  noise; later factors use h0 only (h1/h2 NOT used); all cases
+  share exactly the same GPS, IMU, LiDAR and Camera factors,
+  except for the GPS covariance weighting.
+- Common deterministic LiDAR-integrated graph initial values;
+  initial pose identity with origin-relative corrupted GPS.
+  No saved dev Fixed/Mamba solution, no use of test reference
+  to initialize, select or stop optimization.
+- At most 12 LM passes (100 iterations each), relative objective
+  reduction <=1e-6 AND translation shift RMSE <=0.01m;
+  flag failures and instability, do NOT remove failed drives.
+- One initialization only is predeclared on new sequences.
+  Dev three-start best-basin results are NOT directly comparable.
+- Primary outcome: origin-relative 3D RMSE versus ORIGINAL
+  UNCORRUPTED OXTS GPS, secondary: origin-relative 2D,
+  1-frame and 10-frame displacement RMSE, convergence and
+  wall-clock solver time. Results are TESTED synthetic GPS
+  corruption recovery, NOT independent physical state GT.
+- Only after BOTH sequences have finished ALL four solves
+  will the benchmark runner open the saved clean OXTS-derived
+  reference for metric computation. Outputs written under
+  `results/isj_v7/heldout_cap4_v1/`, refuse overwrite/release
+  if folder exists. An interrupted release remains marked
+  `RUN_INCOMPLETE`: don't silently delete and rerun.
+- No arbitrary user case/sequence/Cap threshold/seed controls
+  in the release interface. Future papers must disclose the
+  post-hoc 0027 method selection and reused-source evaluation.
+
+### Test the program WITHOUT opening the reserved sensor streams
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+echo V7_TEST_EXIT=$?
+python -m experiments.isj_v7.cross_sequence_v7 --preflight
+echo V7_CROSS_PREFLIGHT_EXIT=$?
+~~~
+
+`--preflight` reads only directory entries, file sizes and flags.
+It does not read OXTS, KITTI timestamps, .bin, camera images or
+the 0016/0020 target trajectories, and never constructs any
+factor graph or output folder. New synthetic regression tests
+cover metadata-only behavior, timestamps, names, one-time release
+token gate, four frozen cases, diagnostics and a GTSAM graph solve.
+
+The **actual** heldout invocation is intentionally NOT given as
+the next step: first review tests and metadata-only preflight;
+then approve opening both reserved drives ONCE under the
+already version-controlled frozen protocol. This file/code commit
+must remain frozen before any test metric is inspected.

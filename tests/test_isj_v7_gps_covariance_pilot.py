@@ -604,3 +604,150 @@ def test_frozen_sequence_sigma_consumed_by_same_four_sensor_graph(tmp_path):
     assert graph.size() == 1 + 70 + 3 * 69
     assert np.isfinite(graph.error(initial))
     assert not (tmp_path / "NEVER_WRITE").exists()
+
+
+
+def test_reserved_v7_cases_are_locked_to_four_common_methods():
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    assert sealed.CASES == (
+        "axis_fixed", "axis_gru96_r_cap4", "axis_gru106_r_cap4",
+        "axis_mamba_r_cap4",
+    )
+    assert sealed.EXPECTED_FRAMES == {"0016": 279, "0020": 1104}
+    assert sealed.MAX_PASSES == 12
+    with pytest.raises(ValueError, match="unapproved"):
+        sealed.sequence_path("0034")
+
+
+def _fake_reserved_metadata_tree(tmp_path, monkeypatch):
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    date_dir = tmp_path / "dataset" / "2011_09_30"
+    plan_dir = tmp_path / "plan"
+    plan_dir.mkdir()
+    (plan_dir / "degradation_plan_v2.npz").write_bytes(b"metadata")
+    for cal in sealed.CALIBRATION_NAMES:
+        (date_dir / cal).parent.mkdir(parents=True, exist_ok=True)
+        (date_dir / cal).write_bytes(b"metadata")
+    for sid, n in (("0016", 279), ("0020", 1104)):
+        seq = date_dir / f"2011_09_30_drive_{sid}_sync"
+        for modality, extension in (
+            ("oxts", ".txt"), ("velodyne_points", ".bin"),
+            ("image_02", ".png"), ("image_03", ".png"),
+        ):
+            p = seq / modality / "data"
+            p.mkdir(parents=True)
+            for i in range(n):
+                (p / f"{i:010d}{extension}").touch()
+            (seq / modality / "timestamps.txt").write_bytes(b"metadata")
+    monkeypatch.setattr(sealed, "DATE_DIR", date_dir)
+    monkeypatch.setattr(sealed, "DEV_PLAN_DIR", plan_dir)
+    monkeypatch.setattr(sealed, "DEST", tmp_path / "missing_out")
+    return sealed, date_dir
+
+
+def test_reserved_v7_preflight_is_metadata_only_and_has_no_side_effects(
+        tmp_path, monkeypatch):
+    sealed, date_dir = _fake_reserved_metadata_tree(tmp_path, monkeypatch)
+    before = sorted(str(p) for p in tmp_path.rglob("*") if p.is_file())
+    audit = sealed.metadata_only_preflight()
+    after = sorted(str(p) for p in tmp_path.rglob("*") if p.is_file())
+    assert audit["all_ready"]
+    assert audit["reserved_content_read"] is False
+    assert audit["evaluation_released"] is False
+    assert not audit["output_exists"]
+    assert audit["0016"]["counts"]["velodyne_points/data"] == 279
+    assert audit["0020"]["counts"]["oxts/data"] == 1104
+    assert before == after
+    assert not sealed.DEST.exists()
+
+
+def test_reserved_v7_preflight_detects_missing_sensor_timestamps(
+        tmp_path, monkeypatch):
+    sealed, date_dir = _fake_reserved_metadata_tree(tmp_path, monkeypatch)
+    bad = date_dir / "2011_09_30_drive_0020_sync" / "image_03" / "timestamps.txt"
+    bad.unlink()
+    audit = sealed.metadata_only_preflight()
+    assert audit["all_ready"] is False
+    assert audit["0020"]["ready"] is False
+    assert audit["0020"]["timestamps_ready"]["image_03"] is False
+
+
+def test_reserved_v7_strict_frame_id_validation():
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    from pathlib import Path
+    paths = [Path(f"{i:010d}.bin") for i in range(70)]
+    sealed._check_numbered_paths(paths, 70, "test")
+    with pytest.raises(ValueError, match="nonconsecutive"):
+        sealed._check_numbered_paths(paths[1:]+paths[:1], 70, "test")
+    with pytest.raises(ValueError, match="file count"):
+        sealed._check_numbered_paths(paths[:-1], 70, "test")
+
+
+def test_reserved_v7_origin_relative_diagnostic_is_explicitly_correlated():
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    t = np.arange(70, dtype=float)
+    ref = np.column_stack([t * .1 + 30, t * .2 + 20, t * .3 - 5])
+    p = ref - ref[0]
+    evaluation = sealed.origin_relative_diagnostics(p, ref)
+    assert evaluation["origin_aligned_oxTS_relative_3d_rmse_m"] == 0.
+    assert evaluation["origin_aligned_oxTS_relative_2d_rmse_m"] == 0.
+    assert evaluation["relative_displacement_1_frame_rmse_m"] == 0.
+    assert evaluation["relative_displacement_10_frame_rmse_m"] == 0.
+    assert evaluation["independent_position_ground_truth"] is False
+    with pytest.raises(ValueError, match="synthetic reference"):
+        sealed.origin_relative_diagnostics(p[:10], ref[:10])
+
+
+def test_reserved_v7_cli_fails_closed_without_exact_release_token(monkeypatch):
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    called = []
+    monkeypatch.setattr(sealed, "release_all",
+                        lambda: called.append("RELEASE"))
+    monkeypatch.setattr(
+        sealed, "metadata_only_preflight",
+        lambda: {"all_ready": True, "reserved_content_read": False},
+    )
+    sealed.main(["--preflight"])
+    assert not called
+    with pytest.raises(SystemExit):
+        sealed.main(["--release-all"])
+    with pytest.raises(SystemExit):
+        sealed.main(["--release-all", "--release-token", "WRONG"])
+    with pytest.raises(SystemExit):
+        sealed.main(["--preflight", "--release-token", "SEALED_V7_0016_0020"])
+    assert not called
+
+
+def test_reserved_v7_release_never_overwrites_existing_output(
+        tmp_path, monkeypatch):
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    existing = tmp_path / "heldout"
+    existing.mkdir()
+    monkeypatch.setattr(sealed, "DEST", existing)
+    monkeypatch.setattr(
+        sealed, "metadata_only_preflight",
+        lambda: {"all_ready": True, "output_exists": True},
+    )
+    with pytest.raises(FileExistsError, match="refuse"):
+        sealed.release_all()
+    assert not (existing / "RUN_INCOMPLETE").exists()
+
+
+def test_reserved_v7_gtsam_optimization_has_common_solver_budget(tmp_path):
+    from experiments.isj_v7 import cross_sequence_v7 as sealed
+    pytest.importorskip("gtsam")
+    from src.factor_graph.four_sensor_graph import (
+        run_four_sensor_factor_graph,
+    )
+    m = _measurements(n=64)
+    graph, initial, _ = run_four_sensor_factor_graph(
+        m, tmp_path / "unused", mode="fixed",
+        gps_sigmas_override=np.ones((64, 3))*5.,
+        build_graph_only=True,
+    )
+    solved = sealed._solve_graph(graph, initial, 64)
+    assert solved["poses"].shape == (64, 4, 4)
+    assert np.isfinite(solved["poses"]).all()
+    assert np.isfinite(solved["objective"])
+    assert 1 <= len(solved["passes"]) <= 12
+    assert not (tmp_path / "unused").exists()
