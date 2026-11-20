@@ -20,7 +20,7 @@ import numpy as np
 
 from experiments.isj_v7.run_gps_covariance_pilot import (
     BEGIN, CASES, DEGRADED, END, OUTPUT, prepare_case,
-    subgraph_measurements,
+    reference_diagnostics, subgraph_measurements,
 )
 from experiments.isj_v7.compare_dev_gps import sha256
 from src.factor_graph.degraded_measurements import (
@@ -100,7 +100,8 @@ def load_saved_case(case: str, seed: int, expected_sigma: np.ndarray,
     return poses, metrics
 
 
-def _continue_from(graph, gtsam, values, original_poses: np.ndarray) -> dict:
+def _continue_from(graph, gtsam, values, original_poses: np.ndarray
+                   ) -> tuple[dict, np.ndarray]:
     cfg = gtsam.LevenbergMarquardtParams()
     cfg.setMaxIterations(100)
     cfg.setRelativeErrorTol(1e-7)
@@ -122,15 +123,46 @@ def _continue_from(graph, gtsam, values, original_poses: np.ndarray) -> dict:
             np.mean(np.sum(shift * shift, axis=1)))),
         "position_shift_3d_max_m": float(np.max(
             np.linalg.norm(shift, axis=1))),
-    }
+    }, refined_poses
+
+
+def _attach_reference_diagnostics(
+        result: dict, refined: list[tuple[dict, np.ndarray]],
+        *, archive_path: Path,
+) -> None:
+    """Only read OXTS after all LM optimizer calls have completed.
+
+    This is a retrospective measurement-correlated diagnostic: never
+    used to choose sigma weights, select solver starts or optimize.
+    """
+    if not refined:
+        raise ValueError("reference scoring requires optimized trajectories")
+    with np.load(archive_path, allow_pickle=False) as data:
+        if "clean_gps_local" not in data.files:
+            raise ValueError("development-only clean GPS reference missing")
+        clean = np.asarray(data["clean_gps_local"][BEGIN:END],
+                           dtype=np.float64).copy()
+    if clean.shape != (N, 3) or not np.isfinite(clean).all():
+        raise ValueError("invalid V7 development reference range")
+    for detail, poses in refined:
+        verify_pose_array(poses)
+        detail["post_optimization_development_reference_diagnostics"] = (
+            reference_diagnostics(poses[:, :3, 3], clean)
+        )
+        detail["reference_independent"] = False
+        detail["reference_used_in_optimization"] = False
 
 
 def audit_case(case: str, seed: int, *, refine: bool,
-               cross_start: str | None = None) -> dict:
+               cross_start: str | None = None,
+               score_development_reference: bool = False) -> dict:
     if case not in CASES or seed not in (43, 44, 45):
         raise ValueError("invalid V7 dev case or seed")
     if cross_start is not None and cross_start not in CASES:
         raise ValueError("invalid cross-start model case")
+    if (score_development_reference and not refine
+            and (cross_start is None or cross_start == case)):
+        raise ValueError("reference scoring requires at least one optimization")
     sigma, expected_meta = prepare_case(case, seed)
     stored_poses, metadata = load_saved_case(
         case, seed, sigma, expected_meta)
@@ -170,18 +202,30 @@ def audit_case(case: str, seed: int, *, refine: bool,
             "only compare before/after under the SAME graph."
         ),
     }
+    refined = []
     if refine:
-        result["continued_from_saved"] = _continue_from(
+        own_result, own_poses = _continue_from(
             graph, gtsam, saved_values, stored_poses)
+        result["continued_from_saved"] = own_result
+        refined.append((own_result, own_poses))
     if cross_start is not None and cross_start != case:
         alt_sigma, alt_meta = prepare_case(cross_start, seed)
         alt_poses, _ = load_saved_case(
             cross_start, seed, alt_sigma, alt_meta)
         alt_values = values_from_poses(gtsam, alt_poses)
-        cross_result = _continue_from(
+        cross_result, cross_poses = _continue_from(
             graph, gtsam, alt_values, stored_poses)
         cross_result["alternative_start_case"] = cross_start
         result["continued_from_alternative_start"] = cross_result
+        refined.append((cross_result, cross_poses))
+    # At this point BOTH LM optimization calls are finished. Only now
+    # are GT-correlated clean OXTS values allowed to be loaded for
+    # after-the-fact development diagnostics.
+    if score_development_reference:
+        _attach_reference_diagnostics(
+            result, refined,
+            archive_path=DEGRADED / "degraded_sensor_data.npz",
+        )
     return result
 
 
@@ -195,13 +239,17 @@ def main(argv=None) -> int:
                    help="run LM continuation in memory only, no writes")
     p.add_argument("--cross-start", choices=CASES,
                    help="restart this case's objective from a saved different case")
+    p.add_argument("--score-development-reference", action="store_true",
+                   help="post-optimization OXTS-correlated diagnostics only; no use in solver")
     args = p.parse_args(argv)
     if len(set(args.cases)) != len(args.cases):
         raise ValueError("duplicate cases")
     for name in args.cases:
         print(json.dumps(
             audit_case(name, args.seed, refine=args.refine,
-                       cross_start=args.cross_start),
+                       cross_start=args.cross_start,
+                       score_development_reference=(
+                           args.score_development_reference)),
             indent=2, ensure_ascii=False), flush=True)
     print("V7_FGO_OBJECTIVE_AUDIT_COMPLETE; READ_ONLY; NO_WRITES; NO_HELDOUT")
     return 0

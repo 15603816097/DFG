@@ -56,3 +56,60 @@ Original stored results are never overwritten.
 Next, complete GRU96, GRU106 and Mamba-RU pilot controls and independent
 evaluation-reference methodology; do not tune this heuristic using
 the same selected validation segment and present it as held-out evidence.
+
+## Stage 9b — Evaluate alternative optimized trajectories (development-only)
+
+Seed43 Mamba-mean audit outcome from the server:
+
+- Saved-solution objective: 5778.349329.
+- One extra LM pass from saved: objective 5731.352772, pose shift RMSE 3.6533m.
+- Under the identical Mamba-mean graph, Mamba-R saved poses start
+  at objective 1048.942071 and continue to 1034.647777.
+- The ~82.1% reduction is **within the SAME graph objective**.
+  This is strong evidence of sensitivity to initialization and/or
+  local basin selection, NOT proof of a global optimum.
+- Original mean-sigma 18.4906m OXTS-relative error is not
+  a sound direct comparison to the original Mamba-R 3.3248m
+  without convergence-control.
+
+New --score-development-reference flag computes diagnostics only
+AFTER all requested LM continuations finish in memory. It reads
+the non-independent clean OXTS reference exclusively for scoring,
+never to construct GPS sigma or to initialize/optimize the graph.
+The original archived trajectories remain unmodified.
+
+Read-only step 1: show the earlier 5-case objective audit:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+grep -E '"case":|"objective_from_saved_solution":|"saved_3d_rmse_to_non_independent_oxts_m":' \
+  logs/isj_v7_fg_objective_audit.log
+~~~
+
+Read-only step 2: evaluate the alternative solution under SAME graph
+and show its OXTS-relative (NOT independent ground truth) error:
+
+~~~bash
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+python -u -m experiments.isj_v7.audit_fg_convergence \
+  --seed 43 --cases mamba_mean_sigma --refine --cross-start mamba_r \
+  --score-development-reference
+~~~
+
+Optional further diagnostic: under each of the other saved case
+objectives, use the exact SAME saved Mamba-R poses as an alternate
+initialization. Only report after sufficient within-case convergence.
+
+~~~bash
+python -u -m experiments.isj_v7.audit_fg_convergence \
+  --seed 43 --cases fixed mamba_r mamba_mean_sigma mamba_perm_sigma \
+  --refine --cross-start mamba_r --score-development-reference
+~~~
+
+This optional common start is itself Mamba-derived and thus may
+favor a particular basin. Repeat from Fixed saved poses, or from
+other independent but predeclared starting trajectories, before
+presenting a solver-matched comparison as a scientific result.
+Do not inspect held-out drives 0016/0020 to tune the method.

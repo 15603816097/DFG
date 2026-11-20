@@ -96,3 +96,47 @@ def test_objective_audit_writes_nothing_if_saved_output_missing(
              "dataset_archive_sha256": "b",
              "prediction_archive_sha256": None})
     assert not (tmp_path / "pilot").exists()
+
+
+def test_post_optimization_reference_diagnostics_are_not_independent(
+        tmp_path):
+    record1, record2 = {}, {}
+    poses = np.tile(np.eye(4, dtype=float), (audit.N, 1, 1))
+    poses[:, 0, 3] = np.arange(audit.N, dtype=float) * .2
+    path = tmp_path / "development_synthetic.npz"
+    # Data should be indexed by original raw KITTI 0027 frame index,
+    # but the scoring function reads ONLY [3180:3860).
+    raw = np.zeros((4544, 3), dtype=np.float64)
+    raw[audit.BEGIN:audit.END, 0] = (
+        poses[:, 0, 3] + 7.0
+    )
+    np.savez_compressed(path, clean_gps_local=raw)
+    result = {"development_only": True}
+    audit._attach_reference_diagnostics(
+        result, [(record1, poses), (record2, poses)],
+        archive_path=path,
+    )
+    for r in (record1, record2):
+        assert r["reference_independent"] is False
+        assert r["reference_used_in_optimization"] is False
+        score = r["post_optimization_development_reference_diagnostics"]
+        assert score["origin_aligned_oxTS_relative_3d_rmse_m"] < 1e-9
+        assert score["independent_ATE"] is False
+    assert not (tmp_path / "other-output").exists()
+
+
+def test_reference_scoring_rejects_bad_interval_or_no_optimization(tmp_path):
+    path = tmp_path / "bad.npz"
+    np.savez(path, clean_gps_local=np.ones((500, 3)))
+    poses = np.tile(np.eye(4), (audit.N, 1, 1))
+    with pytest.raises(ValueError, match="reference scoring requires"):
+        audit._attach_reference_diagnostics(
+            {}, [], archive_path=path,
+        )
+    with pytest.raises(ValueError, match="development reference"):
+        audit._attach_reference_diagnostics(
+            {}, [({}, poses)], archive_path=path,
+        )
+    with pytest.raises(ValueError, match="reference scoring requires"):
+        audit.audit_case("fixed", 43, refine=False,
+                         score_development_reference=True)
