@@ -291,3 +291,78 @@ under adequate convergence, record the negative result. Do not tune
 the cap against already explored VAL, report as independent test,
 or modify trained checkpoints. Independently referenced evaluation
 and prospective causal FGO remain unresolved prerequisites.
+
+## Stage 13 — development settings locked after Cap4 diagnostic (2026-11-20)
+
+This is a DEVELOPMENT-only algorithm-settings lock, NOT final test
+approval. Completed on known 0027 VAL GPS h0 anchors 3180..3859,
+with three common post-hoc start poses and GTSAM LM <=100 iterations
+per pass up to 12 passes. All four selected Cap4 cases reported
+`selected_stabilized=True` under the stated numerical stopping rule.
+
+**Complete OXTS/GPS-correlated development results (meters):**
+
+| GPS covariance | origin-aligned 3D RMSE | 2D RMSE | 1-frame displacement RMSE | 10-frame displacement RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| Train-axis fixed | 2.58063 | 2.48535 | 0.18258 | 0.99919 |
+| GRU96 train-axis Cap4 | 2.08302 | 2.05902 | 0.18269 | 1.05476 |
+| GRU106 train-axis Cap4 | 2.10895 | 2.08656 | 0.18357 | 1.06937 |
+| Mamba train-axis Cap4 | 2.15383 | 2.10639 | 0.17533 | 1.02140 |
+
+Factual comparisons only: GRU96-Cap4 lowest 3D/2D position RMSE;
+Mamba-Cap4 lowest 1-frame displacement RMSE; train-axis fixed
+lowest 10-frame displacement RMSE. Do NOT claim Mamba has best
+overall state-estimation accuracy. Do NOT relabel displacement
+metrics as full SE(3) pose RPE.
+
+**Development-selected algorithm settings locked here:**
+
+- Frozen 0027 TRAIN-only per-axis RMS and five-bin oracle-conditioned
+  mapping from `run_gps_covariance_pilot.py`.
+- Only Cap4, fixed exactly at 4x max per-axis TRAIN-fixed precision.
+- Input features from degraded GPS only, 64-frame causal history;
+  GRU and Mamba model/checkpoint as already trained, seed43 initially.
+- h0 head only for GPS covariance; forecast heads h1/h2 are NOT used
+  in the V7 four-sensor FGO and cannot support a predictive FGO claim.
+- Other three sensor covariance models fixed as in V7 legacy pilot.
+- All comparisons are offline batch FGO; no prospective iSAM2 claim.
+- Multi-start solution selected by each graph's own objective, never
+  reference RMSE. Common starts include explored Fixed and Mamba
+  pilot solutions; this initialization is post-hoc and does NOT
+  transfer automatically to an unseen sequence.
+- Do not experiment with Cap2/Cap8, extra model checkpoints or
+  alternative trajectory alignment based on 0027 VAL outcomes.
+
+**Remaining independent evaluation gates (NOT passed):**
+
+1. Confirm the reserved raw 0016/0020 drive directories and all
+   required LiDAR, stereo camera, GPS and IMU files exist, without
+   loading them or checking target metrics during readiness audit.
+2. Adapt V7 saved model feature extraction/scaler, degradation protocol
+   and original four-sensor factor generation to new sequences;
+   `experiments/cross_sequence/` Stage7 builds different V5/V6
+   inputs and is NOT an interchangeable V7 estimator pipeline.
+3. For any new sequence, derive factor graph initial states only from
+   available non-reference measurements under one frozen common
+   initialization procedure (the 0027 saved Mamba/Fixed trajectories
+   are NOT available for new drives). Record optimizer failure rate.
+4. Freeze primary outcome: origin-aligned 3D position RMSE in m;
+   secondary: origin-aligned 2D RMSE, displacement error over 1
+   and 10 frames, stability and compute cost. Do not present position
+   scores against OXTS GPS as physically independent absolute ATE.
+5. Build a valid independent measurement-reference separation OR
+   explicitly position the experiment as generalization to unseen
+   drives of **synthetic GPS corruption** relative to original OXTS.
+   Synthetic corruption reference independence is NOT physical
+   positioning GT independence. Cross-time GPS-origin covariance
+   remains unmodeled in this FGO.
+6. After prerequisites, approve and document a ONE-TIME heldout
+   release, no tuning or test-driven code revision afterwards.
+
+This stage freezes settings to prevent further 0027 validation
+cherry-picking. It does NOT assert actual data readiness, adequate
+independent GT, statistically significant gains, or final paper quality.
+Full source code/protocol implementation remains versioned under
+Git commit a0056b95b15c53b5f4926cfa0a61e39a040918c0, with
+Cap4 reference analysis saved in
+`logs/isj_v7_cap4_multistart_seed43.log` on the user's server.
