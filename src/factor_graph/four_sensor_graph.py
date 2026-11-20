@@ -574,11 +574,12 @@ def run_four_sensor_factor_graph(
         gps_sigmas_override = np.asarray(
             gps_sigmas_override, dtype=np.float64
         )
-        if (gps_sigmas_override.shape != (n,)
+        if (gps_sigmas_override.shape not in ((n,), (n, 3))
                 or not np.isfinite(gps_sigmas_override).all()
                 or np.any(gps_sigmas_override <= 0.0)):
             raise ValueError(
-                "gps_sigmas_override must contain n finite positive sigmas"
+                "gps_sigmas_override must contain n finite positive sigmas "
+                "with shape (n,) or (n,3) in local XYZ order"
             )
 
     reliabilities = None
@@ -655,9 +656,12 @@ def run_four_sensor_factor_graph(
     ):
         if use_gps:
             if mode == "fixed":
+                # (n,3) XYZ overrides are handled by sigma_xyz below.
+                # Preserve the exact scalar code path for legacy cases.
                 sigma_gps = (
                     float(gps_sigmas_override[i])
-                    if gps_sigmas_override is not None
+                    if (gps_sigmas_override is not None
+                        and gps_sigmas_override.ndim == 1)
                     else config.gps_fixed_sigma
                 )
             else:
@@ -672,17 +676,19 @@ def run_four_sensor_factor_graph(
                     )
                 )
 
+            # Optional training-only axis-aware GPS covariance.
+            # Legacy scalar sigma behavior is exactly preserved.
+            if (mode == "fixed"
+                    and gps_sigmas_override is not None
+                    and gps_sigmas_override.ndim == 2):
+                sigma_xyz = gps_sigmas_override[i]
+            else:
+                sigma_xyz = (sigma_gps, sigma_gps, sigma_gps)
+
             gps_noise = (
                 gtsam.noiseModel.Diagonal.Sigmas(
                     np.asarray(
-                        [
-                            1e6,
-                            1e6,
-                            1e6,
-                            sigma_gps,
-                            sigma_gps,
-                            sigma_gps,
-                        ],
+                        [1e6, 1e6, 1e6, *sigma_xyz],
                         dtype=np.float64,
                     )
                 )

@@ -211,3 +211,164 @@ def test_posthoc_cases_are_explicit_and_preflight_only(monkeypatch, tmp_path):
     assert pilot.get_development_run({}, "no_gps", 43) is None
     for name in ("no_gps", "mamba_mean_sigma", "mamba_perm_sigma"):
         assert not (tmp_path / name).exists()
+
+
+
+def _synthetic_train_axis_data():
+    n = len(pilot.TRAIN_ANCHORS)
+    groups = np.arange(n) % 5
+    levels = np.asarray([.1, .3, .5, .7, .9])
+    reliability = levels[groups]
+    # Squared error is constructed from group severity and axis energy;
+    # a completely synthetic fixture, not KITTI/VAL/test values.
+    scales = np.asarray([12., 7., 4., 2., .5])
+    errors = np.column_stack((
+        scales[groups] * .8,
+        scales[groups] * .6,
+        scales[groups] * .15,
+    ))
+    return errors, reliability
+
+
+def test_train_axis_fit_has_five_monotone_bins_and_correct_fixed_rms():
+    error, r = _synthetic_train_axis_data()
+    fit = pilot.fit_train_axis_noise(error, r)
+    assert fit["train_anchors"] == [63, 3177]
+    assert sum(fit["counts"]) == 3115
+    assert fit["sigma_bins_xyz"].shape == (5, 3)
+    assert np.allclose(fit["centers"], [.1, .3, .5, .7, .9])
+    assert np.all(np.diff(fit["sigma_bins_xyz"], axis=0) <= 0)
+    assert np.allclose(
+        fit["sigma_fixed_xyz"],
+        np.sqrt(np.mean(error**2, axis=0)),
+    )
+    assert fit["sigma_fixed_xyz"][0] > fit["sigma_fixed_xyz"][2]
+
+
+def test_axis_prediction_map_responds_to_reliability_and_is_axis_specific():
+    error, r = _synthetic_train_axis_data()
+    fitted = pilot.fit_train_axis_noise(error, r)
+    prediction = np.linspace(.1, .9, 680)
+    sigma = pilot.axis_sigma_from_prediction(prediction, fitted)
+    assert sigma.shape == (680, 3)
+    assert np.all(np.isfinite(sigma))
+    assert np.all(np.diff(sigma, axis=0) <= 1e-10)
+    assert np.all(sigma[:, 0] > sigma[:, 2])
+    assert np.allclose(
+        sigma[0], fitted["sigma_bins_xyz"][0],
+    )
+    assert np.allclose(
+        sigma[-1], fitted["sigma_bins_xyz"][-1],
+    )
+
+
+def test_train_axis_mapping_rejects_invalid_labels_or_shapes():
+    error, r = _synthetic_train_axis_data()
+    with pytest.raises(ValueError, match="3115 clean train"):
+        pilot.fit_train_axis_noise(error[:-1], r)
+    with pytest.raises(ValueError, match="3115 clean train"):
+        pilot.fit_train_axis_noise(error, np.full(3115, np.nan))
+    fit = pilot.fit_train_axis_noise(error, r)
+    with pytest.raises(ValueError, match="axis prediction"):
+        pilot.axis_sigma_from_prediction(np.ones(682), fit)
+    with pytest.raises(ValueError, match="axis prediction"):
+        pilot.axis_sigma_from_prediction(np.full(680, -1.), fit)
+    # All TRAIN anchors in only one bin is not enough for bin fit.
+    with pytest.raises(ValueError, match="too few train"):
+        pilot.fit_train_axis_noise(error, np.full(3115, .9))
+
+
+def test_axis_train_fit_is_unaffected_by_val_and_test_source_rows(
+        tmp_path, monkeypatch):
+    n = 4544
+    error, reliability = _synthetic_train_axis_data()
+    clean = np.zeros((n, 3), dtype=np.float64)
+    degraded = clean.copy()
+    degraded[pilot.TRAIN_ANCHORS] = error
+    label = np.zeros(n, dtype=np.float64)
+    label[pilot.TRAIN_ANCHORS] = reliability
+
+    sensors = tmp_path / "degraded_four_sensor_measurements"
+    sensors.mkdir()
+    oracle = tmp_path / "source" / "gps_oracle.npz"
+    oracle.parent.mkdir()
+    sensor_path = sensors / "degraded_sensor_data.npz"
+
+    def write_archives(tail):
+        degraded[3180:] = tail
+        clean[3180:] = -tail
+        label[3180:] = .99 if tail != 0 else .01
+        np.savez(sensor_path, degraded_gps_local=degraded,
+                 clean_gps_local=clean)
+        np.savez(oracle, gps_current_factor_reliability=label)
+        policy = {"raw_sources": {
+            "degraded_sensor": {"sha256": pilot.sha256(sensor_path)},
+            "v3": {"sha256": pilot.sha256(oracle),
+                   "path": "source/gps_oracle.npz"},
+        }}
+        return policy
+
+    monkeypatch.setattr(pilot, "ROOT", tmp_path)
+    monkeypatch.setattr(pilot, "DEGRADED", sensors)
+    first = pilot.load_train_axis_noise(write_archives(0))
+    second = pilot.load_train_axis_noise(write_archives(1e6))
+    assert np.array_equal(first["sigma_fixed_xyz"],
+                          second["sigma_fixed_xyz"])
+    assert np.array_equal(first["sigma_bins_xyz"],
+                          second["sigma_bins_xyz"])
+    assert first["counts"] == second["counts"]
+
+
+def test_xyz_fgo_sigma_is_accepted_but_malformed_matrices_rejected(tmp_path):
+    pytest.importorskip("gtsam")
+    from src.factor_graph.four_sensor_graph import (
+        run_four_sensor_factor_graph,
+    )
+    m = _measurements(n=2)
+    matrix = np.asarray([[5., 6., 7.], [8., 9., 10.]])
+    graph, initial, factor_counts = run_four_sensor_factor_graph(
+        m, tmp_path / "never_write", mode="fixed",
+        gps_sigmas_override=matrix, build_graph_only=True,
+    )
+    assert graph.size() == 6
+    assert factor_counts["gps"] == 2
+    assert np.isfinite(graph.error(initial))
+    assert not (tmp_path / "never_write").exists()
+    with pytest.raises(ValueError, match="finite positive"):
+        run_four_sensor_factor_graph(
+            m, tmp_path / "never_write", mode="fixed",
+            gps_sigmas_override=np.ones((2, 2)),
+            build_graph_only=True,
+        )
+    with pytest.raises(ValueError, match="finite positive"):
+        run_four_sensor_factor_graph(
+            m, tmp_path / "never_write", mode="fixed",
+            gps_sigmas_override=np.asarray([[1, -2, 3], [1, 2, 3]]),
+            build_graph_only=True,
+        )
+
+
+def test_xyz_and_repeated_isotropic_sigma_have_identical_graph_error(tmp_path):
+    pytest.importorskip("gtsam")
+    from src.factor_graph.four_sensor_graph import (
+        run_four_sensor_factor_graph,
+    )
+    m = _measurements(n=2)
+    scalar = np.asarray([5., 8.])
+    xyztied = np.repeat(scalar[:, None], 3, axis=1)
+    g1, v1, _ = run_four_sensor_factor_graph(
+        m, tmp_path / "unused", mode="fixed",
+        gps_sigmas_override=scalar, build_graph_only=True,
+    )
+    g2, v2, _ = run_four_sensor_factor_graph(
+        m, tmp_path / "unused", mode="fixed",
+        gps_sigmas_override=xyztied, build_graph_only=True,
+    )
+    assert g1.error(v1) == pytest.approx(g2.error(v2), abs=1e-10)
+
+
+def test_axis_fixed_needs_no_network_output():
+    assert pilot.get_development_run({}, "axis_fixed", 43) is None
+    for name in ("axis_fixed", "axis_gru96_r",
+                 "axis_gru106_r", "axis_mamba_r"):
+        assert name in pilot.CASES

@@ -44,7 +44,8 @@ BEGIN = 3180
 END = 3860
 EXPECTED_N = 4544
 CASES = ("fixed", "no_gps", "gru96_r", "gru106_r", "mamba_r", "mamba_r_u",
-         "mamba_mean_sigma", "mamba_perm_sigma")
+         "mamba_mean_sigma", "mamba_perm_sigma",
+         "axis_fixed", "axis_gru96_r", "axis_gru106_r", "axis_mamba_r")
 BASE_SIGMA = FourSensorFactorConfig().gps_fixed_sigma
 R_GAIN = 4.0
 EVIDENCE_GAIN = 0.5
@@ -79,6 +80,107 @@ def build_gps_sigmas(
             raise ValueError("invalid evidence U: require 680 values in [0,1]")
     return base_sigma * np.sqrt(1.0 + R_GAIN * (1.0 - r)
                                 + EVIDENCE_GAIN * e)
+
+
+
+# All axis-noise fit statistics come from *training* anchors only.
+# [3180,3862) raw validation and [3862,4544) test are NEVER calibration
+# inputs. Bins were chosen before examining axis-variant FGO outcomes.
+TRAIN_ANCHORS = np.arange(63, 3178, dtype=np.int64)
+AXIS_BIN_EDGES = np.linspace(0.0, 1.0, 6, dtype=np.float64)
+AXIS_BIN_CENTERS = (AXIS_BIN_EDGES[1:] + AXIS_BIN_EDGES[:-1]) / 2.0
+AXIS_STD_FLOOR_M = 0.10
+
+
+def fit_train_axis_noise(
+    errors_xyz: np.ndarray, oracle_reliability: np.ndarray,
+) -> dict:
+    """Train-only empirical per-axis RMS, grouped by *oracle* reliability.
+
+    This is an exploratory synthetic-label conditional noise mapping,
+    NOT probabilistically calibrated to out-of-sample predicted scores.
+    In particular, the oracle target was defined from these very errors.
+    No validation/truth information is accepted by this function.
+    """
+    error = np.asarray(errors_xyz, dtype=np.float64)
+    r = np.asarray(oracle_reliability, dtype=np.float64)
+    if (error.shape != (len(TRAIN_ANCHORS), 3)
+            or r.shape != (len(TRAIN_ANCHORS),)
+            or not np.isfinite(error).all() or not np.isfinite(r).all()
+            or np.any((r < 0) | (r > 1))):
+        raise ValueError("axis mapping requires 3115 clean train anchors")
+    fixed = np.sqrt(np.mean(error**2, axis=0))
+    bin_xyz = []
+    counts = []
+    for i, (lo, hi) in enumerate(zip(AXIS_BIN_EDGES[:-1],
+                                     AXIS_BIN_EDGES[1:])):
+        m = (r >= lo) & (r < hi if i < 4 else r <= hi)
+        n = int(m.sum())
+        if n < 25:
+            raise ValueError("too few train labels for axis noise bin")
+        counts.append(n)
+        bin_xyz.append(np.sqrt(np.mean(error[m]**2, axis=0)))
+    bins = np.asarray(bin_xyz, dtype=np.float64)
+    # Conservative monotone enforcement when a noisy finite bin
+    # contradicts the expected synthetic oracle severity ordering.
+    bins = np.minimum.accumulate(bins, axis=0)
+    bins = np.maximum(bins, AXIS_STD_FLOOR_M)
+    fixed = np.maximum(fixed, AXIS_STD_FLOOR_M)
+    return {
+        "sigma_fixed_xyz": fixed,
+        "sigma_bins_xyz": bins,
+        "centers": AXIS_BIN_CENTERS.copy(),
+        "counts": counts,
+        "train_anchors": [int(TRAIN_ANCHORS[0]),
+                          int(TRAIN_ANCHORS[-1])],
+    }
+
+
+def load_train_axis_noise(policy: dict) -> dict:
+    """Check frozen source hashes, then slice *only* the 3115 TRAIN rows."""
+    gps_path = DEGRADED / "degraded_sensor_data.npz"
+    oracle_meta = policy["raw_sources"]["v3"]
+    oracle_path = ROOT / oracle_meta["path"]
+    if (sha256(gps_path) !=
+            policy["raw_sources"]["degraded_sensor"]["sha256"]
+            or sha256(oracle_path) != oracle_meta["sha256"]):
+        raise ValueError("GPS training calibration source hash mismatch")
+    with np.load(gps_path, allow_pickle=False) as z:
+        degraded = np.asarray(z["degraded_gps_local"][:3180],
+                              dtype=np.float64)
+        clean = np.asarray(z["clean_gps_local"][:3180],
+                           dtype=np.float64)
+    with np.load(oracle_path, allow_pickle=False) as z:
+        label = np.asarray(
+            z["gps_current_factor_reliability"][:3180], dtype=np.float64)
+    if (degraded.shape != (3180, 3) or clean.shape != (3180, 3)
+            or label.shape != (3180,)):
+        raise ValueError("train-only axis source has wrong shape")
+    return fit_train_axis_noise(
+        degraded[TRAIN_ANCHORS] - clean[TRAIN_ANCHORS],
+        label[TRAIN_ANCHORS],
+    )
+
+
+def axis_sigma_from_prediction(r: np.ndarray, fitted: dict) -> np.ndarray:
+    """Smooth, monotone train-binned XYZ RMS indexed by predicted r(t).
+
+    The prediction distribution is not calibrated to the oracle; this
+    mapping is intentionally hypothesis-testing, not a validated
+    physical observation likelihood.
+    """
+    prediction = np.asarray(r, dtype=np.float64)
+    bins = np.asarray(fitted["sigma_bins_xyz"], dtype=np.float64)
+    centers = np.asarray(fitted["centers"], dtype=np.float64)
+    if (prediction.shape != (END-BEGIN,) or bins.shape != (5, 3)
+            or centers.shape != (5,) or not np.isfinite(prediction).all()
+            or np.any((prediction < 0) | (prediction > 1))
+            or not np.isfinite(bins).all() or np.any(bins <= 0)):
+        raise ValueError("axis prediction/calibration dimensions mismatch")
+    return np.column_stack([
+        np.interp(prediction, centers, bins[:, axis])
+        for axis in range(3)
+    ])
 
 
 def mamba_sigma_control(
@@ -145,16 +247,17 @@ def subgraph_measurements(m, *, begin=BEGIN, end=END):
 
 
 def get_development_run(candidate: dict, name: str, seed: int) -> dict | None:
-    if name in ("fixed", "no_gps"):
+    base = name.removeprefix("axis_")
+    if base in ("fixed", "no_gps"):
         return None
-    if name == "gru106_r":
+    if base == "gru106_r":
         run = read_run(CAPACITY_OUTPUT, "gru", seed, candidate)
         if (run["metrics"].get("run_family") != "capacity_gru_h106"
                 or run["metrics"]["config"]["hidden"] != 106
                 or run["metrics"]["parameter_count"] != 139290):
             raise ValueError("incorrect GRU106 capacity-control provenance")
     else:
-        backend = "gru" if name == "gru96_r" else "mamba"
+        backend = "gru" if base == "gru96_r" else "mamba"
         run = read_run(DEFAULT_OUTPUT, backend, seed, candidate)
         expected_params = 114630 if backend == "gru" else 139590
         if (run["metrics"]["config"]["hidden"] != 96
@@ -178,8 +281,12 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         raise ValueError("degraded GPS factor source differs from frozen V7")
     candidate = read_candidate()
     run = get_development_run(candidate, case, seed)
+    axis_fit = load_train_axis_noise(policy) if case.startswith("axis_") else None
     if run is None:
-        sigma = build_gps_sigmas(None)
+        if axis_fit is not None:
+            sigma = np.tile(axis_fit["sigma_fixed_xyz"], (END-BEGIN, 1))
+        else:
+            sigma = build_gps_sigmas(None)
         prediction_sha = None
     else:
         arrays = run["arrays"]
@@ -187,15 +294,21 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
                 or not np.array_equal(candidate["anchors"],
                                       np.arange(BEGIN, END, dtype=np.int64))):
             raise ValueError("wrong timestamp or label source")
-        sigma = build_gps_sigmas(
-            arrays["reliability"][:, 0],
-            (arrays["evidence_uncertainty"][:, 0]
-             if case == "mamba_r_u" else None),
-        )
-        if case in ("mamba_mean_sigma", "mamba_perm_sigma"):
-            sigma = mamba_sigma_control(sigma, case, seed)
-        backend = "gru" if case.startswith("gru") else "mamba"
-        path = (CAPACITY_OUTPUT if case == "gru106_r"
+        if axis_fit is not None:
+            sigma = axis_sigma_from_prediction(
+                arrays["reliability"][:, 0], axis_fit,
+            )
+        else:
+            sigma = build_gps_sigmas(
+                arrays["reliability"][:, 0],
+                (arrays["evidence_uncertainty"][:, 0]
+                 if case == "mamba_r_u" else None),
+            )
+            if case in ("mamba_mean_sigma", "mamba_perm_sigma"):
+                sigma = mamba_sigma_control(sigma, case, seed)
+        base_case = case.removeprefix("axis_")
+        backend = "gru" if base_case.startswith("gru") else "mamba"
+        path = (CAPACITY_OUTPUT if base_case == "gru106_r"
                 else DEFAULT_OUTPUT) / backend / f"seed_{seed}" / "val_predictions.npz"
         prediction_sha = sha256(path)
     metadata = {
@@ -205,8 +318,13 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         "not_online_incremental_fgo": True,
         "reference_is_not_independent": True,
         "not_calibrated_covariance": True,
+        "train_oracle_conditioning_only": case.startswith("axis_"),
+        "not_calibrated_to_network_predictions": True,
         "gps_sigma_mapping": (
-            "none: GPS factors disabled" if case == "no_gps"
+            "TRAIN-only fixed per-axis RMS (XYZ)" if case == "axis_fixed"
+            else "TRAIN oracle reliability bins -> predicted r(t) -> per-axis RMS"
+            if case.startswith("axis_")
+            else "none: GPS factors disabled" if case == "no_gps"
             else "5m fixed" if case == "fixed"
             else "mean over 680 Mamba-R sigmas" if case == "mamba_mean_sigma"
             else "deterministically permuted Mamba-R sigma sequence"
@@ -216,7 +334,8 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         ),
         "control_class": (
             "post_hoc_diagnostic_after_initial_FGO_result"
-            if case in ("no_gps", "mamba_mean_sigma", "mamba_perm_sigma")
+            if (case in ("no_gps", "mamba_mean_sigma", "mamba_perm_sigma")
+                or case.startswith("axis_"))
             else "initial_exploratory_pilot"
         ),
         "gps_factors_enabled": case != "no_gps",
@@ -234,7 +353,7 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             else "GPS sigma only; IMU/LiDAR/Camera covariances fixed"
         ),
         "used_head": (
-            "none" if case in ("fixed", "no_gps")
+            "none" if case in ("fixed", "no_gps", "axis_fixed")
             else "h0: GPS reliability predicted from observations <= t"
         ),
         "prediction_archive_sha256": prediction_sha,
@@ -251,6 +370,21 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             float(np.mean(np.abs(sigma - BASE_SIGMA) > 1e-6))
             if case != "no_gps" else None
         ),
+        "sigma_mean_xyz": (np.mean(sigma, axis=0).tolist()
+                           if sigma.ndim == 2 else None),
+        "train_axis_fit": (
+            {
+                "train_anchor_range_inclusive": axis_fit["train_anchors"],
+                "bin_centers": axis_fit["centers"].tolist(),
+                "bin_counts": axis_fit["counts"],
+                "train_fixed_sigma_xyz": axis_fit["sigma_fixed_xyz"].tolist(),
+                "train_binned_sigma_xyz": axis_fit["sigma_bins_xyz"].tolist(),
+                "minimum_sigma_m": AXIS_STD_FLOOR_M,
+                "synthetic_oracle_conditioned": True,
+                "network_prediction_calibrated": False,
+                "relative_gps_origin_error_correlation_modeled": False,
+            } if axis_fit is not None else None
+        ),
         "notes": [
             "Historical 0027 VAL is already used to select networks and early stop; metrics are biased developmental diagnostics.",
             "The FGO uses all sensor observations inside the 680-frame VAL batch (offline future context); NOT an online claim.",
@@ -258,6 +392,8 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             "Saved clean OXTS-derived GPS reference is reused for evaluation only; NOT independent GNSS truth.",
             "0016/0020 held-out drives not accessed; 0027 post-VAL source rows may be loaded from the archived NPZ but are not used in this graph or its metrics.",
             "No-GPS and Mamba sigma controls added AFTER seeing seed43 Fixed/Mamba-R outcomes. These are exploratory, not prespecified confirmatory tests.",
+            "Axis mapping uses only synthetic oracle reliability and position-error RMS from frozen 0027 TRAIN anchors, never validation/test reference.",
+            "Axis sigma ignores cross-axis and common-origin temporal correlation induced by GPS rebasing; not a full measurement noise model.",
             "The constant-mean control preserves mean Mamba sigma, and permutation preserves the full empirical sigma distribution while breaking its time alignment.",
         ],
     }
