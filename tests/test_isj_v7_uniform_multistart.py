@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 
 from experiments.isj_v7 import audit_uniform_multistart as uniform
+from src.factor_graph.four_sensor_graph import (
+    FourSensorMeasurements, run_four_sensor_factor_graph,
+)
 
 
 def test_default_common_start_pool_is_identical_for_all_cases():
@@ -97,8 +100,93 @@ def test_preflight_is_read_only_and_never_builds_fgo(
 
 def test_position_validation_rejects_invalid_GTSAM_poses():
     gtsam = pytest.importorskip("gtsam")
-    from experiments.isj_v7.audit_fg_convergence import values_from_poses
     a = np.tile(np.eye(4), (uniform.N, 1, 1))
-    x = values_from_poses(gtsam, a)
+    x = uniform.values_from_poses(gtsam, a)
     assert np.array_equal(
         uniform._pose_from_values(gtsam, x), a)
+
+
+# Retained meaningful integrity checks from superseded single-start audit.
+def _tiny_case():
+    poses = np.tile(np.eye(4, dtype=float), (1, 1, 1))
+    return FourSensorMeasurements(
+        gps_local=np.array([[0., 0., 0.], [0.1, 0., 0.]], dtype=float),
+        imu_gyro=np.zeros((2, 3), dtype=float),
+        timestamps=[0., 0.1],
+        lidar_between=poses,
+        lidar_valid=np.ones(1, dtype=bool),
+        lidar_quality=np.ones(1, dtype=float),
+        camera_between=poses.copy(),
+        camera_valid=np.ones(1, dtype=bool),
+        camera_quality=np.ones(1, dtype=float),
+    )
+
+
+def test_graph_only_audit_returns_exact_graph_without_any_writes(tmp_path):
+    gtsam = pytest.importorskip("gtsam")
+    destination = tmp_path / "must_not_exist"
+    m = _tiny_case()
+    graph, initial, counts = run_four_sensor_factor_graph(
+        m, destination, mode="fixed",
+        gps_sigmas_override=np.array([5.0, 6.0]),
+        build_graph_only=True,
+    )
+    assert counts == {"gps": 2, "imu": 1, "lidar": 1, "camera": 1}
+    assert graph.size() == 6
+    assert initial.size() == 2
+    assert np.isfinite(graph.error(initial))
+    assert not destination.exists()
+    poses = np.tile(np.eye(4, dtype=float), (uniform.N, 1, 1))
+    values = uniform.values_from_poses(gtsam, poses)
+    assert values.size() == uniform.N
+
+
+def test_graph_only_no_gps_still_factors_without_writes(tmp_path):
+    pytest.importorskip("gtsam")
+    m = _tiny_case()
+    directory = tmp_path / "must_not_exist"
+    graph, values, counts = run_four_sensor_factor_graph(
+        m, directory, mode="fixed", use_gps=False,
+        build_graph_only=True,
+    )
+    assert counts["gps"] == 0
+    assert graph.size() == 4
+    assert values.size() == 2
+    assert not directory.exists()
+
+
+def test_pose_guard_rejects_wrong_shape_nonfinite_rotation_bottom_row():
+    correct = np.tile(np.eye(4, dtype=float), (uniform.N, 1, 1))
+    assert uniform.verify_pose_array(correct).shape == (680, 4, 4)
+    with pytest.raises(ValueError, match="pose array"):
+        uniform.verify_pose_array(correct[:-1])
+    corrupted = correct.copy()
+    corrupted[0, 1, 3] = np.nan
+    with pytest.raises(ValueError, match="pose array"):
+        uniform.verify_pose_array(corrupted)
+    corrupted = correct.copy()
+    corrupted[0, 3, 0] = 5.
+    with pytest.raises(ValueError, match="nonhomogeneous"):
+        uniform.verify_pose_array(corrupted)
+    corrupted = correct.copy()
+    corrupted[0, 0, 0] = 2.
+    with pytest.raises(ValueError, match="rotations"):
+        uniform.verify_pose_array(corrupted)
+
+
+
+
+def test_uniform_audit_writes_nothing_if_saved_output_missing(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(audit, "OUTPUT", tmp_path / "pilot")
+    sigma = np.ones(uniform.N, dtype=float) * 5.
+    with pytest.raises(FileNotFoundError, match="incomplete saved"):
+        uniform.load_saved_case(
+            "fixed", 43, sigma,
+            {"gps_measurement_archive_sha256": "a",
+             "dataset_archive_sha256": "b",
+             "prediction_archive_sha256": None})
+    assert not (tmp_path / "pilot").exists()
+
+
+

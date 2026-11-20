@@ -34,17 +34,86 @@ from experiments.isj_v7.run_gps_covariance_pilot import (
     BEGIN, CASES, DEGRADED, END, OUTPUT, prepare_case,
     reference_diagnostics, subgraph_measurements,
 )
-from experiments.isj_v7.audit_fg_convergence import (
-    load_saved_case, values_from_poses, verify_pose_array,
-)
+from experiments.isj_v7.compare_dev_gps import sha256
 from src.factor_graph.degraded_measurements import (
     load_degraded_four_sensor_measurements,
 )
 from src.factor_graph.four_sensor_graph import (
-    _pose3_to_matrix, run_four_sensor_factor_graph,
+    _pose3_from_matrix, _pose3_to_matrix, run_four_sensor_factor_graph,
 )
 
 N = END - BEGIN
+
+
+# Data-integrity and pose helpers formerly kept in the one-off
+# audit_fg_convergence.py audit. Uniform multi-start is now their only
+# active caller; colocating them removes that superseded script.
+def verify_pose_array(poses: np.ndarray) -> np.ndarray:
+    a = np.asarray(poses, dtype=np.float64)
+    if a.shape != (N, 4, 4) or not np.isfinite(a).all():
+        raise ValueError("invalid saved FGO pose array")
+    if not np.allclose(a[:, 3, :], [0, 0, 0, 1], atol=1e-7):
+        raise ValueError("nonhomogeneous saved FGO poses")
+    rots = a[:, :3, :3]
+    if (np.max(np.abs(rots @ rots.transpose(0, 2, 1)
+                      - np.eye(3))) > 1e-5
+            or np.max(np.abs(np.linalg.det(rots) - 1.0)) > 1e-5):
+        raise ValueError("invalid saved FGO rotations")
+    return a
+
+
+def values_from_poses(gtsam, poses: np.ndarray):
+    verified = verify_pose_array(poses)
+    values = gtsam.Values()
+    for i, p in enumerate(verified):
+        values.insert(i, _pose3_from_matrix(gtsam, p))
+    return values
+
+
+def load_saved_case(case: str, seed: int, expected_sigma: np.ndarray,
+                    expected_meta: dict) -> tuple[np.ndarray, dict]:
+    folder = OUTPUT / f"seed_{seed}" / case
+    p = folder / "poses.npy"
+    metric_path = folder / "pilot_metrics.json"
+    traj_path = folder / "trajectory.txt"
+    if not (p.is_file() and metric_path.is_file() and traj_path.is_file()):
+        raise FileNotFoundError(f"incomplete saved pilot: {folder}")
+    metrics = json.loads(metric_path.read_text(encoding="utf-8"))
+    if (metrics.get("schema") != "isj_v7_0027_dev_gps_fgo_pilot_v1"
+            or metrics.get("status") != "COMPLETE_DEVELOPMENT_PILOT"
+            or metrics.get("development_only") is not True
+            or metrics.get("reference_is_not_independent") is not True
+            or metrics.get("interval_half_open") != [BEGIN, END]
+            or metrics.get("frames") != N
+            or metrics.get("case") != case
+            or metrics.get("seed") != seed
+            or metrics.get("gps_measurement_archive_sha256")
+                 != expected_meta["gps_measurement_archive_sha256"]
+            or metrics.get("dataset_archive_sha256")
+                 != expected_meta["dataset_archive_sha256"]
+            or metrics.get("prediction_archive_sha256")
+                 != expected_meta["prediction_archive_sha256"]
+            or metrics.get("trajectory_sha256") != sha256(traj_path)):
+        raise ValueError(f"invalid saved provenance: {folder}")
+    poses = verify_pose_array(np.load(p, allow_pickle=False))
+    stored_trajectory = np.loadtxt(traj_path, dtype=np.float64)
+    if (stored_trajectory.shape != (N, 3)
+            or not np.allclose(poses[:, :3, 3], stored_trajectory,
+                               atol=2e-7, rtol=0)):
+        raise ValueError("saved pose and trajectory disagree")
+    sigma_file = folder / "gps_sigmas.npy"
+    if case == "no_gps":
+        if sigma_file.exists():
+            raise ValueError("no_gps should not store GPS sigmas")
+    else:
+        if not sigma_file.is_file():
+            raise FileNotFoundError(f"missing GPS sigma archive: {folder}")
+        sigmas = np.load(sigma_file, allow_pickle=False)
+        if not np.array_equal(sigmas, expected_sigma):
+            raise ValueError("stored GPS sigmas changed after pilot")
+    return poses, metrics
+
+
 START_NAMES = ("lidar", "fixed_saved", "mamba_saved")
 DEFAULT_CASES = (
     "fixed", "gru96_r", "gru106_r", "mamba_r",

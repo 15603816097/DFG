@@ -82,3 +82,25 @@ fi
 No held-out 0016/0020 evaluation, no independent state-estimation
 GT, no prospective iSAM2 inference and no correction to the
 well-documented Beta evidence miscalibration is claimed here.
+
+
+## Consolidation / cleanup after uniform multi-start
+
+The previous single-case `audit_fg_convergence.py` was superseded
+by `audit_uniform_multistart.py`. Its shared source-hash, saved-pose,
+trajectory-consistency and sigma-integrity checks are now implemented
+inside the active uniform multi-start module. The redundant single-case
+script, its overlapping test file and `CONVERGENCE_AUDIT.md` were
+removed. Regression tests for the retained integrity checks continue
+to run in `test_isj_v7_uniform_multistart.py`.
+
+The seed43 uniform audit (all three starts numerically stable under the
+configured stopping test) produced 3D OXTS-relative RMSE:
+Fixed 2.911867 m; GRU96 3.304539 m; GRU106 3.277028 m;
+Mamba-R 3.266197 m; Mamba-RU 3.354056 m;
+Mamba-Mean 3.758092 m; Mamba-Permuted 3.689006 m.
+Fixed is the best of these seven tested settings, so the current
+heuristic dynamic GPS covariance does **not** demonstrate improved
+state estimation. Numerically stable LM does not establish a unique
+or global minimum; OXTS/GPS reference is not independent and these
+remain **development-only/post-hoc** findings.
