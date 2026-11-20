@@ -372,3 +372,54 @@ def test_axis_fixed_needs_no_network_output():
     for name in ("axis_fixed", "axis_gru96_r",
                  "axis_gru106_r", "axis_mamba_r"):
         assert name in pilot.CASES
+
+
+
+def test_cap4_limits_precision_to_four_times_axis_fixed():
+    sigma = np.tile(
+        np.array([0.50, 0.48, 0.31], dtype=np.float64),
+        (pilot.END - pilot.BEGIN, 1),
+    )
+    axis_fixed = np.asarray([4.1457, 3.7861, 1.2329])
+    capped = pilot.cap_axis_information(sigma, axis_fixed)
+    assert capped.shape == sigma.shape
+    assert np.allclose(capped[0], axis_fixed / 2.0)
+    assert np.max((axis_fixed[None, :] / capped)**2) <= 4.0 + 1e-10
+    assert np.array_equal(sigma[0], [.50, .48, .31])
+    assert not np.shares_memory(sigma, capped)
+
+
+def test_cap4_preserves_outlier_downweighting_without_shrinking_sigmas():
+    axis_fixed = np.asarray([4.0, 3.0, 1.0])
+    sigma = np.tile(np.asarray([10., 6., 2.0]), (680, 1))
+    sigma[0] = [.1, .2, .05]
+    actual = pilot.cap_axis_information(sigma, axis_fixed)
+    assert np.allclose(actual[0], [2., 1.5, .5])
+    assert np.array_equal(actual[1:], sigma[1:])
+    assert np.all(actual >= sigma)
+    assert np.all(actual > 0)
+
+
+def test_cap4_rejects_invalid_inputs_or_precision_ratio_below_one():
+    sigma = np.ones((680, 3))
+    fixed = np.array([4., 3., 1.])
+    with pytest.raises(ValueError, match="precision cap"):
+        pilot.cap_axis_information(np.ones((680,)), fixed)
+    with pytest.raises(ValueError, match="precision cap"):
+        pilot.cap_axis_information(sigma, np.ones((4,)))
+    with pytest.raises(ValueError, match="precision cap"):
+        pilot.cap_axis_information(np.full((680, 3), np.nan), fixed)
+    with pytest.raises(ValueError, match="precision cap"):
+        pilot.cap_axis_information(sigma, fixed, max_information_ratio=.99)
+
+
+def test_cap4_variants_are_explicit_posthoc_controls():
+    assert pilot.AXIS_MAX_PRECISION_RATIO == 4.0
+    assert (
+        "axis_gru96_r_cap4", "axis_gru106_r_cap4", "axis_mamba_r_cap4"
+    ) == tuple(c for c in pilot.CASES if c.endswith("_cap4"))
+    for case in ("axis_gru96_r_cap4",
+                 "axis_gru106_r_cap4", "axis_mamba_r_cap4"):
+        assert case.startswith("axis_")
+        assert case.removeprefix("axis_").removesuffix("_cap4") in (
+            "gru96_r", "gru106_r", "mamba_r")

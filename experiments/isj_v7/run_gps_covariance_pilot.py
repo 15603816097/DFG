@@ -45,7 +45,8 @@ END = 3860
 EXPECTED_N = 4544
 CASES = ("fixed", "no_gps", "gru96_r", "gru106_r", "mamba_r", "mamba_r_u",
          "mamba_mean_sigma", "mamba_perm_sigma",
-         "axis_fixed", "axis_gru96_r", "axis_gru106_r", "axis_mamba_r")
+         "axis_fixed", "axis_gru96_r", "axis_gru106_r", "axis_mamba_r",
+         "axis_gru96_r_cap4", "axis_gru106_r_cap4", "axis_mamba_r_cap4")
 BASE_SIGMA = FourSensorFactorConfig().gps_fixed_sigma
 R_GAIN = 4.0
 EVIDENCE_GAIN = 0.5
@@ -183,6 +184,39 @@ def axis_sigma_from_prediction(r: np.ndarray, fitted: dict) -> np.ndarray:
     ])
 
 
+# Fixed post-hoc stress-test value: per-axis precision cannot exceed
+# four times the training-only fixed-axis precision. This is NOT
+# validation-selected, calibrated, or a confirmed optimal cap.
+AXIS_MAX_PRECISION_RATIO = 4.0
+
+
+def cap_axis_information(
+    sigmas_xyz: np.ndarray, train_fixed_xyz: np.ndarray,
+    *, max_information_ratio: float = AXIS_MAX_PRECISION_RATIO,
+) -> np.ndarray:
+    """Cap GPS information relative to *TRAIN-only* fixed-axis noise.
+
+    P(t,a)=1/sigma(t,a)^2 <= 4 / sigma_train_fixed(a)^2.
+    Only the lower sigma bound is changed; severe GPS downweighting
+    remains intact. Never reads synthetic labels or OXTS reference here.
+    """
+    sigma = np.asarray(sigmas_xyz, dtype=np.float64)
+    fixed = np.asarray(train_fixed_xyz, dtype=np.float64)
+    if (sigma.shape != (END - BEGIN, 3) or fixed.shape != (3,)
+            or not np.isfinite(sigma).all()
+            or not np.isfinite(fixed).all()
+            or np.any(sigma <= 0) or np.any(fixed <= 0)
+            or not np.isfinite(max_information_ratio)
+            or max_information_ratio < 1):
+        raise ValueError("invalid GPS precision cap input")
+    floor_xyz = fixed / np.sqrt(max_information_ratio)
+    result = np.maximum(sigma, floor_xyz[None, :])
+    if (np.any((fixed[None, :] / result)**2 >
+               max_information_ratio * (1 + 1e-12))):
+        raise AssertionError("GPS precision exceeds fixed-axis cap")
+    return result
+
+
 def mamba_sigma_control(
     raw_sigmas: np.ndarray, case: str, seed: int,
 ) -> np.ndarray:
@@ -247,7 +281,7 @@ def subgraph_measurements(m, *, begin=BEGIN, end=END):
 
 
 def get_development_run(candidate: dict, name: str, seed: int) -> dict | None:
-    base = name.removeprefix("axis_")
+    base = name.removeprefix("axis_").removesuffix("_cap4")
     if base in ("fixed", "no_gps"):
         return None
     if base == "gru106_r":
@@ -282,6 +316,8 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
     candidate = read_candidate()
     run = get_development_run(candidate, case, seed)
     axis_fit = load_train_axis_noise(policy) if case.startswith("axis_") else None
+    capped = case.endswith("_cap4")
+    raw_sigma_before_cap = None
     if run is None:
         if axis_fit is not None:
             sigma = np.tile(axis_fit["sigma_fixed_xyz"], (END-BEGIN, 1))
@@ -298,6 +334,11 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             sigma = axis_sigma_from_prediction(
                 arrays["reliability"][:, 0], axis_fit,
             )
+            if capped:
+                raw_sigma_before_cap = sigma.copy()
+                sigma = cap_axis_information(
+                    sigma, axis_fit["sigma_fixed_xyz"],
+                )
         else:
             sigma = build_gps_sigmas(
                 arrays["reliability"][:, 0],
@@ -306,7 +347,7 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             )
             if case in ("mamba_mean_sigma", "mamba_perm_sigma"):
                 sigma = mamba_sigma_control(sigma, case, seed)
-        base_case = case.removeprefix("axis_")
+        base_case = case.removeprefix("axis_").removesuffix("_cap4")
         backend = "gru" if base_case.startswith("gru") else "mamba"
         path = (CAPACITY_OUTPUT if base_case == "gru106_r"
                 else DEFAULT_OUTPUT) / backend / f"seed_{seed}" / "val_predictions.npz"
@@ -320,8 +361,17 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         "not_calibrated_covariance": True,
         "train_oracle_conditioning_only": case.startswith("axis_"),
         "not_calibrated_to_network_predictions": True,
+        "post_hoc_4x_precision_cap": bool(capped),
+        "precision_cap_basis": (
+            "train_axis_fixed_sigma_xyz; 4x axis-specific inverse variance"
+            if capped else None
+        ),
         "gps_sigma_mapping": (
             "TRAIN-only fixed per-axis RMS (XYZ)" if case == "axis_fixed"
+            else "TRAIN binned XYZ RMS from predicted r(t), "
+                 "then cap each axis GPS information at 4x "
+                 "the train-fixed-axis precision"
+            if capped
             else "TRAIN oracle reliability bins -> predicted r(t) -> per-axis RMS"
             if case.startswith("axis_")
             else "none: GPS factors disabled" if case == "no_gps"
@@ -372,6 +422,15 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
         ),
         "sigma_mean_xyz": (np.mean(sigma, axis=0).tolist()
                            if sigma.ndim == 2 else None),
+        "cap4_change_fraction_of_axes": (
+            float(np.mean(sigma > raw_sigma_before_cap + 1e-12))
+            if capped else None
+        ),
+        "max_precision_ratio_against_train_axis_fixed": (
+            np.max((axis_fit["sigma_fixed_xyz"][None, :] / sigma)**2,
+                   axis=0).tolist()
+            if axis_fit is not None else None
+        ),
         "train_axis_fit": (
             {
                 "train_anchor_range_inclusive": axis_fit["train_anchors"],
@@ -394,6 +453,7 @@ def prepare_case(case: str, seed: int) -> tuple[np.ndarray, dict]:
             "No-GPS and Mamba sigma controls added AFTER seeing seed43 Fixed/Mamba-R outcomes. These are exploratory, not prespecified confirmatory tests.",
             "Axis mapping uses only synthetic oracle reliability and position-error RMS from frozen 0027 TRAIN anchors, never validation/test reference.",
             "Axis sigma ignores cross-axis and common-origin temporal correlation induced by GPS rebasing; not a full measurement noise model.",
+            "The 4x cap is a POST-HOC single-setting exploratory test introduced after inspecting V7 development diagnostics. No VAL GT is used to construct sigma; outcomes are not independent proof.",
             "The constant-mean control preserves mean Mamba sigma, and permutation preserves the full empirical sigma distribution while breaking its time alignment.",
         ],
     }

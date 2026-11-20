@@ -201,3 +201,93 @@ All comparisons are same *explored* validation, offline batch LM,
 and use correlated OXTS reference only after candidate selection.
 Future final study must build a truly independent evaluation-reference
 and handle time-correlated GNSS errors; no improvement is guaranteed.
+
+## Stage 12 — Frozen post-hoc 4x GPS information cap (one setting only)
+
+The existing 0027 VAL confidence diagnostic showed:
+
+| h0 model | VAL MAE to synthetic oracle | r>=0.9 fraction | high r>=0.9 on oracle r<0.4 |
+| --- | ---: | ---: | ---: |
+| GRU96 | 0.15595 | 48.82% | 2 / 680 |
+| GRU106 | 0.15272 | 48.97% | 2 / 680 |
+| Mamba | 0.14001 | 51.76% | 2 / 680 |
+
+Thus the hypothesis that Mamba uniquely mislabels many BAD GPS
+observations as highly reliable is NOT supported by this diagnostic.
+Mamba was actually more conservative than the GRUs when synthetic
+oracle reliability was <0.4 (mean predicted score ~0.262 vs
+~0.309/0.325), while emitting high reliability more often overall.
+
+Yet the unbounded relative axis-precision scaling reached:
+maximum X 67.04x, Y 61.62x, Z 15.50x relative to TRAIN
+fixed-axis precision. Mamba hit the max at the median; GRU did
+not. These severe factors may cause instability from imperfect
+prediction calibration, correlated GPS errors or numerical
+conditioning. This does not establish a causal explanation.
+
+Exactly ONE conservative exploratory cap is introduced *after* seeing
+those developer diagnostics. No other cap values are evaluated:
+
+  sigma_cap(t,a) = max(sigma_axis_predicted(t,a),
+                        sigma_axis_train_fixed(a) / sqrt(4))
+
+Therefore 1/sigma_cap^2 <= 4/sigma_axis_train_fixed^2 in each XYZ
+axis. This retains severe-observation downweighting, limits
+high-information observations, and is identical for all three
+backbones. It is NOT a calibrated GPS likelihood or prespecified
+confirmation. It does NOT use validation reference in factors.
+
+Added in-place to `run_gps_covariance_pilot.py`, sharing the
+existing multi-start read-only FGO script:
+
+- `axis_gru96_r_cap4`
+- `axis_gru106_r_cap4`
+- `axis_mamba_r_cap4`
+
+The original three `axis_*_r` cases and `axis_fixed` remain
+unchanged. The uniform audit still uses the same three starts,
+four-sensor factors and GTSAM stopping rule, and chooses a result
+by each graph's objective alone.
+
+Read-only smoke and actual dev diagnostic:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+set +e; set +u; set +o pipefail
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+TEST_RC=$?
+echo V7_TEST_RC=$TEST_RC
+if [ "$TEST_RC" -eq 0 ]; then
+  mkdir -p logs
+  python -u -m experiments.isj_v7.audit_uniform_multistart \
+    --seed 43 --cases axis_fixed axis_gru96_r_cap4 \
+                      axis_gru106_r_cap4 axis_mamba_r_cap4 \
+    > logs/isj_v7_cap4_preflight.log 2>&1
+  PRE_RC=$?
+  echo CAP4_PREFLIGHT_RC=$PRE_RC
+  if [ "$PRE_RC" -eq 0 ]; then
+    python -u -m experiments.isj_v7.audit_uniform_multistart \
+      --run --max-passes 12 --seed 43 \
+      --cases axis_fixed axis_gru96_r_cap4 \
+              axis_gru106_r_cap4 axis_mamba_r_cap4 \
+      > logs/isj_v7_cap4_multistart_seed43.log 2>&1
+    RUN_RC=$?
+    echo CAP4_MULTISTART_RC=$RUN_RC
+    grep -E '^(SOLVE|RESULT|V7_UNIFORM)' \
+      logs/isj_v7_cap4_multistart_seed43.log
+    if [ "$RUN_RC" -ne 0 ]; then
+      tail -n 80 logs/isj_v7_cap4_multistart_seed43.log
+    fi
+  else
+    tail -n 80 logs/isj_v7_cap4_preflight.log
+  fi
+fi
+~~~
+
+If capped Mamba does not beat `axis_fixed` or capacity-matched GRU106
+under adequate convergence, record the negative result. Do not tune
+the cap against already explored VAL, report as independent test,
+or modify trained checkpoints. Independently referenced evaluation
+and prospective causal FGO remain unresolved prerequisites.
