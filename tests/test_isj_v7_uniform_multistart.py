@@ -178,7 +178,7 @@ def test_pose_guard_rejects_wrong_shape_nonfinite_rotation_bottom_row():
 
 def test_uniform_audit_writes_nothing_if_saved_output_missing(
         tmp_path, monkeypatch):
-    monkeypatch.setattr(audit, "OUTPUT", tmp_path / "pilot")
+    monkeypatch.setattr(uniform, "OUTPUT", tmp_path / "pilot")
     sigma = np.ones(uniform.N, dtype=float) * 5.
     with pytest.raises(FileNotFoundError, match="incomplete saved"):
         uniform.load_saved_case(
