@@ -380,3 +380,59 @@ def test_frozen_checkpoint_loader_fails_closed_on_non_checkpoint_bytes(
         trainer.load_frozen_v7_gps_checkpoint(
             "gru96_r", seed=43, device="cpu",
         )
+
+
+
+def test_legacy_baseline_frozen_artifacts_missing_run_family_are_accepted(
+        tmp_path, monkeypatch):
+    # Earlier, independently audited baseline GRU/Mamba experiments omitted
+    # run_family; V7 get_development_run() already treats that as baseline.
+    folder, data, state, metrics = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    metrics.pop("run_family")
+    state.pop("run_family")
+    (folder / "metrics.json").write_text(json.dumps(metrics))
+    torch.save(state, folder / "best.pt")
+    model, center, iqr, info = trainer.load_frozen_v7_gps_checkpoint(
+        "gru96_r", seed=43, device="cpu",
+    )
+    assert info["parameters"] == 114630
+    assert not model.training
+    assert np.array_equal(center, data["train_median"])
+    assert np.array_equal(iqr, data["train_iqr"])
+
+
+def test_frozen_loader_rejects_wrong_explicit_run_family(
+        tmp_path, monkeypatch):
+    folder, _, state, metrics = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    metrics["run_family"] = "capacity_gru_h106"
+    (folder / "metrics.json").write_text(json.dumps(metrics))
+    with pytest.raises(ValueError, match="run_family"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=43, device="cpu",
+        )
+    metrics["run_family"] = "baseline"
+    (folder / "metrics.json").write_text(json.dumps(metrics))
+    state["run_family"] = "capacity_gru_h106"
+    torch.save(state, folder / "best.pt")
+    with pytest.raises(ValueError, match="metadata disagreement"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=43, device="cpu",
+        )
+
+
+def test_frozen_loader_names_mismatched_metadata_fields(
+        tmp_path, monkeypatch):
+    folder, _, _, metrics = _synthetic_frozen_gru_checkpoint(
+        tmp_path, monkeypatch,
+    )
+    metrics["config"]["hidden"] = 1
+    metrics["config"]["input_clip"] = -3
+    (folder / "metrics.json").write_text(json.dumps(metrics))
+    with pytest.raises(ValueError, match="config.hidden, config.input_clip"):
+        trainer.load_frozen_v7_gps_checkpoint(
+            "gru96_r", seed=43, device="cpu",
+        )

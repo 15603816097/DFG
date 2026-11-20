@@ -485,3 +485,19 @@ installed CUDA/mamba_ssm runtime, report the error rather than
 substituting GRU. Actual V7 four-sensor heldout data preparation
 is still gated by date-specific calibration and a frozen degradation
 and optimization protocol.
+
+### Stage 15 compatibility patch — legacy run_family default
+
+The initial frozen-load gate exposed a mismatch between the historical
+GRU96/Mamba baseline metadata accepted by the already validated
+get_development_run() and the new strict checkpoint loader. An absent
+run_family is now interpreted as baseline ONLY for original GRU96/Mamba
+base checkpoints. Explicit wrong family values still fail. GRU106
+capacity checkpoints must explicitly declare capacity_gru_h106.
+Known dataset SHA256, normalizer, train/validation provenance, expected
+parameter count, network architecture and weights_only=True are NOT
+relaxed. The error message now identifies *which metadata field names*
+failed verification rather than emitting only an opaque ValueError.
+Regression covers missing historical run_family in both metadata and
+checkpoint, wrong explicit family, and useful field diagnostics.
+No heldout 0016/0020 contents or test results were accessed.

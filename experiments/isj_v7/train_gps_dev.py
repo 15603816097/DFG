@@ -233,28 +233,51 @@ def load_frozen_v7_gps_checkpoint(
     data, source = load_dev_data(DEFAULT_DEST)
     metrics = json.loads(metric_path.read_text(encoding="utf-8"))
     cfg = metrics.get("config", {})
-    if (metrics.get("schema") != "isj_v7_dev_gps_trainval_baseline_v1"
-            or metrics.get("backend") != backend
-            or metrics.get("run_family") != family
-            or metrics.get("parameter_count") != params
-            or metrics.get("development_only") is not True
-            or metrics.get("approved_for_final_training") is not False
-            or metrics.get("independent_test_run") is not False
-            or metrics.get("validation_is_from_0027_development") is not True
-            or metrics.get("dataset_sha256") != source["archive_sha256"]
-            or metrics.get("dataset_manifest_sha256")
-                 != source["manifest_sha256"]
-            or cfg.get("seed") != seed
-            or cfg.get("hidden") != hidden
-            or cfg.get("layers") != 2
-            or cfg.get("window") != 64
-            or cfg.get("heads") != [0, 1, 2]
-            or not isinstance(cfg.get("dropout"), (int, float))
-            or not isinstance(cfg.get("input_clip"), (int, float))
-            or not (0 <= cfg["dropout"] < 1)
-            or not np.isfinite(cfg["input_clip"])
-            or cfg["input_clip"] <= 0):
-        raise ValueError("unverified V7 frozen model metrics/provenance")
+    # The original V7 GRU96/Mamba baseline predates explicit run_family.
+    # The already-audited get_development_run() accepts its absence as
+    # "baseline". GRU106 capacity-control must retain an explicit tag.
+    metric_checks = {
+        "schema": metrics.get("schema") ==
+            "isj_v7_dev_gps_trainval_baseline_v1",
+        "backend": metrics.get("backend") == backend,
+        "run_family": (
+            metrics.get("run_family", "baseline") == family
+            if family == "baseline"
+            else metrics.get("run_family") == family
+        ),
+        "parameter_count": metrics.get("parameter_count") == params,
+        "development_only": metrics.get("development_only") is True,
+        "approved_for_final_training":
+            metrics.get("approved_for_final_training") is False,
+        "independent_test_run": metrics.get("independent_test_run") is False,
+        "validation_is_from_0027_development":
+            metrics.get("validation_is_from_0027_development") is True,
+        "dataset_sha256": metrics.get("dataset_sha256") ==
+            source["archive_sha256"],
+        "dataset_manifest_sha256": metrics.get("dataset_manifest_sha256") ==
+            source["manifest_sha256"],
+        "config.seed": cfg.get("seed") == seed,
+        "config.hidden": cfg.get("hidden") == hidden,
+        "config.layers": cfg.get("layers") == 2,
+        "config.window": cfg.get("window") == 64,
+        "config.heads": cfg.get("heads") == [0, 1, 2],
+        "config.dropout": (
+            isinstance(cfg.get("dropout"), (int, float))
+            and 0 <= cfg["dropout"] < 1
+        ),
+        "config.input_clip": (
+            isinstance(cfg.get("input_clip"), (int, float))
+            and np.isfinite(cfg["input_clip"])
+            and cfg["input_clip"] > 0
+        ),
+    }
+    mismatched = [key for key, valid in metric_checks.items() if not valid]
+    if mismatched:
+        # Only list failed field names; do not silently relax hashes.
+        raise ValueError(
+            "unverified V7 frozen model metrics/provenance: "
+            + ", ".join(mismatched)
+        )
     # The original training uses torch.save with NumPy float32 scalers.
     # Explicitly allow only known benign NumPy array reconstruction
     # primitives, preserving weights_only=True and refusing arbitrary
@@ -278,12 +301,17 @@ def load_frozen_v7_gps_checkpoint(
         raise ValueError(
             "unreadable/unsafe frozen V7 checkpoint; no pickle fallback"
         ) from exc
-    if not isinstance(state, dict) or set(state) != {
-        "model_state_dict", "backend", "run_family", "model_kwargs",
+    required_checkpoint_keys = {
+        "model_state_dict", "backend", "model_kwargs",
         "train_median", "train_iqr", "development_only",
         "approved_for_final_training", "dataset_sha256",
         "manifest_sha256", "git_commit",
-    }:
+    }
+    allowed_checkpoint_keys = required_checkpoint_keys | {"run_family"}
+    if (not isinstance(state, dict)
+            or not required_checkpoint_keys.issubset(state)
+            or (family != "baseline" and "run_family" not in state)
+            or not set(state).issubset(allowed_checkpoint_keys)):
         raise ValueError("invalid frozen checkpoint keys")
     expected_kwargs = {
         "backend": backend, "input_dim": 21, "hidden": hidden,
@@ -291,7 +319,7 @@ def load_frozen_v7_gps_checkpoint(
     }
     if (state["model_kwargs"] != expected_kwargs
             or state["backend"] != backend
-            or state["run_family"] != family
+            or state.get("run_family", "baseline") != family
             or state["development_only"] is not True
             or state["approved_for_final_training"] is not False
             or state["dataset_sha256"] != source["archive_sha256"]
