@@ -501,3 +501,94 @@ failed verification rather than emitting only an opaque ValueError.
 Regression covers missing historical run_family in both metadata and
 checkpoint, wrong explicit family, and useful field diagnostics.
 No heldout 0016/0020 contents or test results were accessed.
+
+## Stage 16 — in-memory full-sequence V7 factor/covariance bridge
+
+Do not open reserved 0016/0020 yet. Following the successful server
+gate (109 V7 tests pass and existing GRU96, GRU106, Mamba checkpoints
+all load on CUDA with expected 114630/139290/139590 parameters), two
+helpers were added to the existing run_gps_covariance_pilot.py:
+
+1. rebase_frozen_v7_measurements(m) validates every four-sensor array,
+   copies it, and rebases degraded GPS relative to the first degraded
+   measurement. It reads neither OXTS clean reference nor GT; no write.
+2. frozen_v7_sequence_gps_sigmas(degraded_gps_local, *, case,
+   train_axis_fit, model, train_median, train_iqr, model_provenance)
+   accepts arbitrary length >=64. Cases are locked to:
+   axis_fixed, axis_gru96_r_cap4, axis_gru106_r_cap4, axis_mamba_r_cap4.
+   It uses exactly the V7 canonical GPS features from the SAME
+   degraded GPS stream (train protocol dt and rolling feature window),
+   frozen model weights and saved TRAIN-only median/IQR, h0 prediction
+   at anchors 63..n-1, frozen five-bin XYZ mapping and exactly Cap4.
+   The first 63 frames use the identical TRAIN fixed-axis sigma for
+   EVERY case; neither padding nor future-observation prediction.
+   The h1/h2 forecasting heads are not used for GPS weighting.
+
+These are pure in-memory **components**, not a held-out evaluation
+runner or released benchmark. Date-specific factor generation,
+frozen synthetic corruption realization, and one-time independent
+evaluation protocol still require independent approval. The original
+0027 680-anchor pilot path has not been changed.
+
+Six tests (synthetic arrays only) check cold-start equality,
+original interpolation/Cap4 equivalence, prefix causality, strict
+case/model validation, non-mutating four-sensor rebasing and
+GTSAM graph-only construction with all four factors; no output
+folders written. Historical V7 tests must still pass.
+
+### Next gate: 0027 DEV VAL parity, without opening TEST or heldout
+
+Run this read-only equivalence check, using original saved 0027 DEV
+GPS values only through frame 3859. This tests whether newly loaded
+frozen model inference gives the same Cap4 sigmas as the *saved*
+0027 validation predictions used in prior experiments, not whether
+0016/0020 generalizes:
+
+~~~bash
+cd /root/projects/DFG
+conda activate dfg-isj-gpu
+git pull --ff-only
+python -m pytest tests/test_isj_v7_*.py -q
+echo V7_TEST_EXIT=$?
+python - <<'PY'
+import numpy as np
+from experiments.isj_v7.train_gps_dev import (
+    load_frozen_v7_gps_checkpoint,
+)
+from experiments.isj_v7.run_gps_covariance_pilot import (
+    DEGRADED, load_train_axis_noise, frozen_v7_sequence_gps_sigmas,
+    prepare_case,
+)
+from experiments.isj_v7.supervision_gate import read_policy, validate_policy
+
+policy=read_policy(); validate_policy(policy)
+fit=load_train_axis_noise(policy)
+with np.load(DEGRADED / 'degraded_sensor_data.npz', allow_pickle=False) as z:
+    gps=np.asarray(z['degraded_gps_local'][:3860], np.float64)
+assert gps.shape == (3860,3)
+for case, backend in (
+    ('axis_gru96_r_cap4','gru96_r'),
+    ('axis_gru106_r_cap4','gru106_r'),
+    ('axis_mamba_r_cap4','mamba_r'),
+):
+    model, median, iqr, info=load_frozen_v7_gps_checkpoint(
+        backend, seed=43, device='auto')
+    new, meta=frozen_v7_sequence_gps_sigmas(
+        gps, case=case, train_axis_fit=fit, model=model,
+        train_median=median, train_iqr=iqr, model_provenance=info,
+    )
+    old,_=prepare_case(case,43)
+    assert new.shape == (3860,3) and old.shape == (680,3)
+    gap=float(np.max(np.abs(new[3180:3860]-old)))
+    ok=gap <= 1e-3
+    print('STREAM_PARITY',case,'max_sigma_abs_diff_m=',gap,
+          'pass=',ok,flush=True)
+    if not ok: raise RuntimeError('Frozen stream did not reproduce DEV')
+print('V7_FROZEN_STREAM_PARITY_OK; DEV_ONLY; NO_HELDOUT')
+PY
+~~~
+
+Note that this parity audit must not load 0027 internal TEST frames
+3862 onward, nor 0016/0020. If any parity mismatch occurs,
+do not proceed to heldout; investigate sensor realization,
+feature scaling/window alignment, checkpoint or inference runtime.

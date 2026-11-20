@@ -23,8 +23,10 @@ import numpy as np
 from experiments.isj_v7.build_dev_gps_candidate import DEFAULT_DEST
 from experiments.isj_v7.compare_dev_gps import read_candidate, read_run, sha256
 from experiments.isj_v7.train_gps_dev import (
-    CAPACITY_OUTPUT, DEFAULT_OUTPUT,
+    CAPACITY_OUTPUT, DEFAULT_OUTPUT, predict_frozen_gps_features_causally,
 )
+from src.multisensor_reliability.config import MultiSensorReliabilityConfig
+from src.multisensor_reliability.features import gps_features
 from experiments.isj_v7.supervision_gate import read_policy, validate_policy
 from src.factor_graph.degraded_measurements import (
     load_degraded_four_sensor_measurements,
@@ -236,6 +238,154 @@ def mamba_sigma_control(
     if case == "mamba_perm_sigma":
         return np.random.default_rng(20261120 + seed).permutation(a)
     raise ValueError("unknown mean/permutation control")
+
+
+
+# Closed-test adapter. It does NOT authorize reading KITTI 0016/0020;
+# its inputs are supplied by a future separately audited data builder.
+# In-memory code only, with the original 0027 protocol left unchanged.
+CROSS_SEQUENCE_CASES = {
+    "axis_fixed": None,
+    "axis_gru96_r_cap4": "gru96_r",
+    "axis_gru106_r_cap4": "gru106_r",
+    "axis_mamba_r_cap4": "mamba_r",
+}
+CROSS_SEQUENCE_HISTORY = 64
+
+
+def rebase_frozen_v7_measurements(measurements: FourSensorMeasurements):
+    """Make a per-drive origin-relative, copy-only four-sensor graph input.
+
+    Do not read the reference trajectory or alter raw sensor arrays.
+    LiDAR/stereo factor construction must use the correct calibration
+    and identical generation protocol *before* calling this helper.
+    """
+    m = measurements
+    gps = np.asarray(m.gps_local, dtype=np.float64)
+    gyro = np.asarray(m.imu_gyro, dtype=np.float64)
+    if (gps.ndim != 2 or gps.shape[1] != 3
+            or len(gps) < CROSS_SEQUENCE_HISTORY
+            or gyro.shape != gps.shape or not np.isfinite(gps).all()
+            or not np.isfinite(gyro).all()
+            or len(m.timestamps) != len(gps)):
+        raise ValueError("invalid frozen V7 cross-sequence sensor arrays")
+    n = len(gps)
+    arrays = {
+        name: np.asarray(getattr(m, name))
+        for name in ("lidar_between", "camera_between",
+                     "lidar_valid", "camera_valid",
+                     "lidar_quality", "camera_quality")
+    }
+    if any(arrays[name].shape != (n - 1, 4, 4)
+           or not np.isfinite(arrays[name]).all()
+           for name in ("lidar_between", "camera_between")):
+        raise ValueError("invalid frozen V7 between-factor shapes")
+    if any(arrays[name].shape != (n - 1,)
+           or not np.isfinite(arrays[name]).all()
+           for name in ("lidar_quality", "camera_quality")):
+        raise ValueError("invalid frozen V7 factor quality shapes")
+    if any(arrays[name].shape != (n - 1,)
+           for name in ("lidar_valid", "camera_valid")):
+        raise ValueError("invalid frozen V7 factor validity shapes")
+    return FourSensorMeasurements(
+        gps_local=gps.copy() - gps[0].copy(),
+        imu_gyro=gyro.copy(),
+        timestamps=list(m.timestamps),
+        lidar_between=arrays["lidar_between"].astype(np.float64).copy(),
+        lidar_valid=arrays["lidar_valid"].astype(bool).copy(),
+        lidar_quality=arrays["lidar_quality"].astype(np.float64).copy(),
+        camera_between=arrays["camera_between"].astype(np.float64).copy(),
+        camera_valid=arrays["camera_valid"].astype(bool).copy(),
+        camera_quality=arrays["camera_quality"].astype(np.float64).copy(),
+    )
+
+
+def frozen_v7_sequence_gps_sigmas(
+    degraded_gps_local: np.ndarray, *, case: str,
+    train_axis_fit: dict,
+    model=None,
+    train_median: np.ndarray | None = None,
+    train_iqr: np.ndarray | None = None,
+    model_provenance: dict | None = None,
+) -> tuple[np.ndarray, dict]:
+    """Build arbitrary-length, model-causal XYZ sigmas with frozen Cap4.
+
+    The only sensor input is the same degraded GPS realization that
+    must later enter the FGO. No clean reference, GT, oracle labels,
+    future measurements or validation-derived calibration are accepted.
+    No checkpoint is trained/reloaded; all parameters are supplied.
+    At t<63, all cases use the *same* fixed train-axis sigmas.
+    Predictions at h1/h2 are NOT used to weigh GPS at t.
+    """
+    if case not in CROSS_SEQUENCE_CASES:
+        raise ValueError("unsupported frozen V7 cross-sequence case")
+    gps = np.asarray(degraded_gps_local, dtype=np.float64)
+    if (gps.ndim != 2 or gps.shape[1] != 3
+            or len(gps) < CROSS_SEQUENCE_HISTORY
+            or not np.isfinite(gps).all()):
+        raise ValueError("invalid frozen V7 GPS stream dimensions")
+    fixed = np.asarray(train_axis_fit["sigma_fixed_xyz"], dtype=np.float64)
+    bins = np.asarray(train_axis_fit["sigma_bins_xyz"], dtype=np.float64)
+    centers = np.asarray(train_axis_fit["centers"], dtype=np.float64)
+    if (fixed.shape != (3,) or bins.shape != (5, 3)
+            or centers.shape != (5,)
+            or not np.allclose(centers, AXIS_BIN_CENTERS, atol=1e-12)
+            or not np.isfinite(fixed).all()
+            or not np.isfinite(bins).all()
+            or np.any(fixed <= 0) or np.any(bins <= 0)
+            or np.any(np.diff(bins, axis=0) > 1e-10)):
+        raise ValueError("invalid training-only XYZ sigma mapping")
+    n = len(gps)
+    sigma = np.repeat(fixed[None, :], n, axis=0)
+    required_model = CROSS_SEQUENCE_CASES[case]
+    if required_model is None:
+        if any(x is not None for x in (
+                model, train_median, train_iqr, model_provenance)):
+            raise ValueError("axis_fixed must not depend on any model")
+    else:
+        info = model_provenance
+        if (model is None or train_median is None or train_iqr is None
+                or not isinstance(info, dict)
+                or info.get("case") != required_model
+                or info.get("window") != 64
+                or info.get("prediction_offsets") != [0, 1, 2]
+                or info.get("model_is_development_only") is not True):
+            raise ValueError("invalid or mismatched frozen model provenance")
+        cfg = MultiSensorReliabilityConfig()
+        features = gps_features(gps, dt=cfg.dt, window=cfg.gps_window)
+        anchors, pred, _ = predict_frozen_gps_features_causally(
+            model, features, train_median, train_iqr,
+            window=64, clip=float(info["input_clip"]),
+        )
+        if not np.array_equal(
+                anchors, np.arange(CROSS_SEQUENCE_HISTORY - 1, n)):
+            raise AssertionError("V7 GPS prediction anchor misalignment")
+        raw = np.column_stack([
+            np.interp(pred[:, 0], centers, bins[:, axis])
+            for axis in range(3)
+        ])
+        # Frozen maximum 4x GPS information relative to the
+        # train-only fixed XYZ baseline; no validation tuning.
+        sigma[anchors] = np.maximum(
+            raw, fixed[None, :] / np.sqrt(AXIS_MAX_PRECISION_RATIO),
+        )
+    if (sigma.shape != (n, 3) or not np.isfinite(sigma).all()
+            or np.any(sigma <= 0)):
+        raise AssertionError("V7 GPS sigma stream became invalid")
+    metadata = {
+        "case": case, "frames": n, "first_model_frame": 63,
+        "cold_start_frames": 63,
+        "cold_start_sigma_source": "train_axis_fixed",
+        "model_used": required_model,
+        "head_used_for_fgo": "h0" if required_model else "none",
+        "future_heads_used_for_fgo": False,
+        "gps_precision_cap_ratio": (
+            AXIS_MAX_PRECISION_RATIO if required_model else None
+        ),
+        "no_evaluation_reference_used": True,
+        "development_model_only": True,
+    }
+    return sigma, metadata
 
 
 def subgraph_measurements(m, *, begin=BEGIN, end=END):

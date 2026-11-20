@@ -423,3 +423,184 @@ def test_cap4_variants_are_explicit_posthoc_controls():
         assert case.startswith("axis_")
         assert case.removeprefix("axis_").removesuffix("_cap4") in (
             "gru96_r", "gru106_r", "mamba_r")
+
+
+def _frozen_sequence_fixture(n=96):
+    gps = np.column_stack((
+        np.arange(n, dtype=float) * .11 + 10.,
+        np.sin(np.arange(n) * .13),
+        np.arange(n, dtype=float) * .005,
+    ))
+    err, r = _synthetic_train_axis_data()
+    mapping = pilot.fit_train_axis_noise(err, r)
+    return gps, mapping
+
+
+def _frozen_gru_provenance():
+    return {
+        "case": "gru96_r", "window": 64,
+        "prediction_offsets": [0, 1, 2],
+        "model_is_development_only": True,
+        "input_clip": 20.0,
+    }
+
+
+def test_frozen_sequence_fixed_and_dynamic_cold_start():
+    import torch
+    from experiments.isj_v7.model_dev_gps import ReliabilityForecastV7
+    gps, fit = _frozen_sequence_fixture(n=96)
+    original = gps.copy()
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8, layers=1,
+        horizon=3, dropout=0.,
+    )
+    zeros = np.zeros(21, dtype=np.float32)
+    ones = np.ones(21, dtype=np.float32)
+    fixed, fixed_meta = pilot.frozen_v7_sequence_gps_sigmas(
+        gps, case="axis_fixed", train_axis_fit=fit,
+    )
+    dynamic, meta = pilot.frozen_v7_sequence_gps_sigmas(
+        gps, case="axis_gru96_r_cap4", train_axis_fit=fit,
+        model=model, train_median=zeros, train_iqr=ones,
+        model_provenance=_frozen_gru_provenance(),
+    )
+    assert fixed.shape == dynamic.shape == (96, 3)
+    assert np.array_equal(fixed, np.tile(fit["sigma_fixed_xyz"], (96, 1)))
+    assert np.array_equal(dynamic[:63], fixed[:63])
+    assert meta["cold_start_frames"] == 63
+    assert fixed_meta["head_used_for_fgo"] == "none"
+    assert meta["head_used_for_fgo"] == "h0"
+    assert meta["future_heads_used_for_fgo"] is False
+    assert np.all(dynamic[63:] >= fit["sigma_fixed_xyz"][None, :] / 2.)
+    assert np.all(dynamic > 0)
+    assert np.array_equal(gps, original)
+
+
+def test_frozen_sequence_mapping_matches_original_v7_interpolation():
+    from experiments.isj_v7.model_dev_gps import ReliabilityForecastV7
+    from experiments.isj_v7.train_gps_dev import (
+        predict_frozen_gps_features_causally,
+    )
+    from src.multisensor_reliability.features import gps_features
+    from src.multisensor_reliability.config import MultiSensorReliabilityConfig
+    gps, fit = _frozen_sequence_fixture(n=84)
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8, layers=1,
+        horizon=3, dropout=0.,
+    )
+    center = np.zeros(21, dtype=np.float32)
+    scale = np.ones(21, dtype=np.float32)
+    sigmas, _ = pilot.frozen_v7_sequence_gps_sigmas(
+        gps, case="axis_gru96_r_cap4", train_axis_fit=fit,
+        model=model, train_median=center, train_iqr=scale,
+        model_provenance=_frozen_gru_provenance(),
+    )
+    cfg = MultiSensorReliabilityConfig()
+    features = gps_features(gps, dt=cfg.dt, window=cfg.gps_window)
+    anchors, predicted, _ = predict_frozen_gps_features_causally(
+        model, features, center, scale, clip=20.,
+    )
+    raw = np.column_stack([
+        np.interp(predicted[:, 0], fit["centers"],
+                  fit["sigma_bins_xyz"][:, j])
+        for j in range(3)
+    ])
+    expected = np.maximum(raw, fit["sigma_fixed_xyz"][None, :] / 2.)
+    assert np.array_equal(anchors, np.arange(63, 84))
+    assert np.allclose(sigmas[anchors], expected, atol=1e-10)
+
+
+def test_frozen_sequence_uses_no_future_gps_and_is_batch_invariant():
+    import torch
+    from experiments.isj_v7.model_dev_gps import ReliabilityForecastV7
+    torch.manual_seed(242)
+    gps, fit = _frozen_sequence_fixture(n=95)
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8, layers=1,
+        horizon=3, dropout=0.,
+    )
+    med = np.zeros(21, dtype=np.float32)
+    iqr = np.ones(21, dtype=np.float32)
+    kwargs = dict(
+        case="axis_gru96_r_cap4", train_axis_fit=fit, model=model,
+        train_median=med, train_iqr=iqr,
+        model_provenance=_frozen_gru_provenance(),
+    )
+    first, _ = pilot.frozen_v7_sequence_gps_sigmas(gps, **kwargs)
+    future_altered = gps.copy()
+    future_altered[81:] += np.array([50., -100., 20.])
+    second, _ = pilot.frozen_v7_sequence_gps_sigmas(
+        future_altered, **kwargs)
+    assert np.array_equal(first[:81], second[:81])
+
+
+def test_frozen_sequence_rejects_mismatched_model_and_training_mapping():
+    from experiments.isj_v7.model_dev_gps import ReliabilityForecastV7
+    gps, fit = _frozen_sequence_fixture(n=71)
+    model = ReliabilityForecastV7(
+        backend="gru", input_dim=21, hidden=8, layers=1,
+        horizon=3, dropout=0.,
+    )
+    args = dict(
+        model=model, train_median=np.zeros(21),
+        train_iqr=np.ones(21), model_provenance=_frozen_gru_provenance())
+    with pytest.raises(ValueError, match="cross-sequence case"):
+        pilot.frozen_v7_sequence_gps_sigmas(
+            gps, case="axis_mamba_r", train_axis_fit=fit, **args)
+    with pytest.raises(ValueError, match="mismatched frozen model"):
+        pilot.frozen_v7_sequence_gps_sigmas(
+            gps, case="axis_mamba_r_cap4", train_axis_fit=fit, **args)
+    with pytest.raises(ValueError, match="must not depend"):
+        pilot.frozen_v7_sequence_gps_sigmas(
+            gps, case="axis_fixed", train_axis_fit=fit, **args)
+    bad_fit = dict(fit, sigma_bins_xyz=np.full((5, 3), np.nan))
+    with pytest.raises(ValueError, match="training-only XYZ"):
+        pilot.frozen_v7_sequence_gps_sigmas(
+            gps, case="axis_fixed", train_axis_fit=bad_fit)
+    with pytest.raises(ValueError, match="GPS stream dimensions"):
+        pilot.frozen_v7_sequence_gps_sigmas(
+            gps[:63], case="axis_fixed", train_axis_fit=fit)
+
+
+def test_frozen_sequence_rebase_is_copy_only_and_strict_shape():
+    m = _measurements(n=70)
+    original = m.gps_local.copy()
+    sub = pilot.rebase_frozen_v7_measurements(m)
+    assert np.array_equal(m.gps_local, original)
+    assert np.array_equal(sub.gps_local[0], [0., 0., 0.])
+    assert np.allclose(sub.gps_local, original - original[0])
+    assert np.array_equal(sub.lidar_between, m.lidar_between)
+    assert not np.shares_memory(sub.gps_local, m.gps_local)
+    assert not np.shares_memory(sub.lidar_between, m.lidar_between)
+    m_short = _measurements(n=63)
+    with pytest.raises(ValueError, match="sensor arrays"):
+        pilot.rebase_frozen_v7_measurements(m_short)
+    m_bad = _measurements(n=70)
+    m_bad.camera_between = m_bad.camera_between[:-1]
+    with pytest.raises(ValueError, match="between-factor"):
+        pilot.rebase_frozen_v7_measurements(m_bad)
+
+
+def test_frozen_sequence_sigma_consumed_by_same_four_sensor_graph(tmp_path):
+    pytest.importorskip("gtsam")
+    from src.factor_graph.four_sensor_graph import (
+        run_four_sensor_factor_graph,
+    )
+    gps, fit = _frozen_sequence_fixture(n=70)
+    m = _measurements(n=70)
+    m.gps_local = gps
+    sub = pilot.rebase_frozen_v7_measurements(m)
+    sigma, _ = pilot.frozen_v7_sequence_gps_sigmas(
+        gps, case="axis_fixed", train_axis_fit=fit,
+    )
+    graph, initial, counts = run_four_sensor_factor_graph(
+        sub, tmp_path / "NEVER_WRITE", mode="fixed",
+        gps_sigmas_override=sigma, build_graph_only=True,
+    )
+    assert counts["gps"] == 70
+    assert counts["imu"] == 69
+    assert counts["lidar"] == 69
+    assert counts["camera"] == 69
+    assert graph.size() == 1 + 70 + 3 * 69
+    assert np.isfinite(graph.error(initial))
+    assert not (tmp_path / "NEVER_WRITE").exists()
