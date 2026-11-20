@@ -1,0 +1,89 @@
+{
+  "schema": "isj_v7_supervision_policy_v1",
+  "status": "development_only",
+  "development_drive": "2011_10_03_drive_0027_sync",
+  "heldout_drives": [
+    "0016",
+    "0020"
+  ],
+  "legacy_0027_internal_test_is_independent": false,
+  "temporal_protocol": {
+    "window": 64,
+    "head_offsets": [
+      0,
+      1,
+      2
+    ],
+    "train_end_exclusive": 3180,
+    "val_end_exclusive": 3862,
+    "normalizer": "train_only_median_iqr"
+  },
+  "raw_sources": {
+    "v3": {
+      "path": "results/predictive_factor_reliability_v3_same_source/factor_reliability_training_data.npz",
+      "sha256": "007d9f57462852c4871b524e7cf764cf198616bd5ffd65cdc93081cf36a1e1d0"
+    },
+    "degraded_sensor": {
+      "path": "results/degraded_four_sensor_measurements/degraded_sensor_data.npz",
+      "sha256": "7743bdcab660988ab456d18257686f7e585f29ba7c9b16775081f357b13f8bec"
+    },
+    "physical_lidar_factors": {
+      "path": "results/lidar_physical_oracle_benchmark/physical_lidar_factor_data.npz",
+      "sha256": "eb9e846bea0a4af5c6607c52a67861fbb85397784cd2806bcd4289c2df070dd1"
+    },
+    "degraded_camera_factors": {
+      "path": "results/degraded_four_sensor_measurements/degraded_camera_factor_data.npz",
+      "sha256": "99ca360530721f62d65165f348b987d6f82c8bbfacd6a4faf6ce3f46858ed67f"
+    },
+    "full_trajectory_fgo_poses": {
+      "path": "results/four_sensor_fixed_fg/poses.npy",
+      "sha256": "e7cfbab791626b5f8d5b35d1c4ded439858508f032c230752263c1a56c1db003"
+    }
+  },
+  "modalities": {
+    "gps": {
+      "legacy_input_matches_label_measurement": false,
+      "corrected_candidate_verified_in_memory": true,
+      "label_source": "clean_original_oxts_vs_degraded_synthetic_gps",
+      "independent_ground_truth": false,
+      "review": "synthetic_supervision_only"
+    },
+    "imu": {
+      "legacy_input_matches_label_measurement": true,
+      "legacy_label_source": "full_trajectory_fixed_fgo_proxy",
+      "independent_ground_truth": false,
+      "review": "descriptive_proxy_only"
+    },
+    "lidar": {
+      "legacy_factor_label_match": true,
+      "legacy_label_source": "full_trajectory_fixed_fgo_proxy",
+      "same_raw_scan_factor_stream_verified": false,
+      "independent_ground_truth": false,
+      "review": "descriptive_proxy_only"
+    },
+    "camera": {
+      "legacy_factor_label_match": true,
+      "legacy_label_source": "full_trajectory_fixed_fgo_proxy",
+      "same_raw_image_factor_stream_verified": false,
+      "independent_ground_truth": false,
+      "review": "descriptive_proxy_only"
+    }
+  },
+  "forward_method": {
+    "permitted_online_features": "past_and_current_degraded_measurements_only",
+    "forecast_heads": "r(t),r(t+1),r(t+2)",
+    "model_compare": "GRU_and_Mamba_shared_input_target_split_normalizer_and_training_budget",
+    "measurement_feedback": "pre_update_residuals_only_with_causal_timing",
+    "offline_reference_in_network_inputs": false,
+    "use_labels_only_as_offline_training_target": true
+  },
+  "release_gates": {
+    "same_realization_multimodal_training_archive_materialized": false,
+    "complete_feature_causality_verified": false,
+    "independent_supervision_or_explicit_synthetic_truth_policy_approved": false,
+    "evaluation_metrics_and_stopping_rules_frozen": false,
+    "independent_test_protocol_frozen": false,
+    "final_training_approved": false,
+    "independent_evaluation_established": false
+  }
+}
