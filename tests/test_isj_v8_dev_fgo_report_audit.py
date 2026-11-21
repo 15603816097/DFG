@@ -19,7 +19,7 @@ def _fixture():
         "forecast_head_future_observation_leakage": False,
         "predictive_feedback_used": False,
         "batch_Levenberg_Marquardt_not_iSAM2": True,
-        "all_cases_same_frame_range": [3180, 3860],
+        "all_cases_use_same_frame_range": [3180, 3860],
         "all_cases_same_startup_fixed_frames": 2,
         "checkpoint_seed": 43,
         "all_cases_stable": True,
@@ -147,3 +147,18 @@ def test_v8_3_readonly_cli_never_writes_or_modifies_report(
     assert path.read_bytes() == saved
     assert path.stat().st_mtime_ns == timestamp
     assert sorted(tmp_path.iterdir()) == [path]
+
+def test_v8_3_report_audit_rejects_wrong_producer_interval():
+    data = _fixture()
+    data["all_cases_use_same_frame_range"] = [3180, 3862]
+    with pytest.raises(ValueError, match="all_cases_use_same_frame_range"):
+        a.audit_report(data)
+
+
+def test_v8_3_report_audit_rejects_legacy_mistyped_interval_key():
+    data = _fixture()
+    data["all_cases_same_frame_range"] = data.pop(
+        "all_cases_use_same_frame_range"
+    )
+    with pytest.raises(ValueError, match="all_cases_use_same_frame_range"):
+        a.audit_report(data)

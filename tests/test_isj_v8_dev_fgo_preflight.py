@@ -134,6 +134,38 @@ def test_v8_3_preflight_metadata_all_cases_and_no_reference(monkeypatch, tmp_pat
     assert manifest["all_cases_same_startup_fixed_frames"] == 2
     assert sorted(str(f) for f in tmp_path.rglob("*")) == original_files
 
+    # Regression: generate producer metadata through the real prepare_cases()
+    # and pass a synthetic, all-stable solve completion to the actual auditor.
+    # This catches schema typos that a stand-alone mock JSON fixture misses.
+    from experiments.isj_v8 import audit_dev_fgo_results as auditor
+    monkeypatch.setattr(auditor, "CASES", expected_cases)
+    monkeypatch.setattr(auditor, "MODELS", ("gru96_r",))
+    assert manifest["all_cases_use_same_frame_range"] == [3180, 3860]
+    completed = manifest.copy()
+    completed["status"] = "COMPLETE_EXPLORATORY_0027_DEV_ONLY"
+    completed["all_cases_stable"] = True
+    completed["evaluation_uses_correlated_oxTS_reference"] = True
+    completed["factors_per_graph"] = auditor.FACTORS.copy()
+    completed["results"] = {
+        case: {
+            "solve": {
+                "stabilized": True,
+                "objective": 100.0,
+                "passes": [{
+                    "stabilized": True,
+                    "position_shift_rmse_m": 0.001,
+                    "relative_objective_reduction": 1e-7,
+                }],
+            },
+            "evaluation": {metric: 2.0 for metric in auditor.METRICS},
+        }
+        for case in expected_cases
+    }
+    summary = auditor.audit_report(completed)
+    assert summary["case_count"] == len(expected_cases)
+    assert summary["all_stable"]
+    assert sorted(str(f) for f in tmp_path.rglob("*")) == original_files
+
 
 def test_v8_3_preflight_rejects_tampered_source_before_mapping(
         monkeypatch, tmp_path):

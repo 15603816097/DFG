@@ -65,7 +65,7 @@ def audit_report(data: dict) -> dict:
         "forecast_head_future_observation_leakage": False,
         "predictive_feedback_used": False,
         "batch_Levenberg_Marquardt_not_iSAM2": True,
-        "all_cases_same_frame_range": [3180, 3860],
+        "all_cases_use_same_frame_range": [3180, 3860],
         "all_cases_same_startup_fixed_frames": 2,
         "checkpoint_seed": 43,
         "all_cases_stable": True,
