@@ -77,3 +77,65 @@ an independent trajectory reference before evaluating it.
 
 Code and unit tests committed; real Ubuntu server tests/DEV report
 are required before any conclusion about h1/h2 forecasting.
+## V8.1 real Ubuntu dev-forecast result (2026-11-21)
+
+User-provided server transcript confirmed `138 passed`,
+`V8_TEST_EXIT=0`, `V8_FORECAST_EXIT=0`, and
+`V8_DEV_HORIZON_PREFLIGHT_OK`. All three seed43 frozen
+checkpoints matched their expected SHA256 and only 0027
+validation archives were read. No FGO or 0016/0020 access.
+
+V8.1 horizon RMSE on the 680 development anchors:
+
+| Backend | h1 forecast | h1 h0(t) persistence | h2 forecast | h2 h0(t) persistence |
+|---|---:|---:|---:|---:|
+| GRU96 | 0.22003659 | 0.22549680 | 0.22750424 | 0.23466183 |
+| GRU106 | 0.22205254 | 0.22176731 | 0.22798983 | 0.23286991 |
+| Mamba | **0.21795851** | 0.22529657 | **0.22693520** | 0.23823028 |
+
+Mamba's future-head improvement versus its predicted current-head
+persistence is 0.007338 (h1) and 0.011295 (h2) RMSE units.
+These are *small DEV-only* gains with no measured FGO effect.
+On oracle-defined large-change subsets, Mamba's change-direction
+accuracy is 51.08% (h1) and 58.16% (h2), not strong evidence
+of online change-point prediction. H1/H2 predict synthetic
+reliability, not independently verified physical GPS covariance.
+
+## V8.2 read-only pre-observation causal-prior audit
+
+Before adding forecasting to a factor graph, evaluate how
+predictions MADE BEFORE the current GPS(t) observation perform:
+
+- `h1(t-1)`: one-step-ahead reliability prior for GPS(t).
+- `h2(t-2)`: two-step-ahead reliability prior for GPS(t).
+- Fixed, non-tuned 50/50 average of the two previous forecasts.
+- Fair past-only baselines `h0(t-1)` / `h0(t-2)`.
+- `h0(t)` is shown ONLY as a post-observation diagnostic and
+  is never permitted into a pre-observation prior.
+
+The script uses existing frozen prediction archives and targets
+on 0027 val, t=3182,...,3859 (678 anchors). Starting at t=3182
+is necessary because previous saved val predictions for t-1/t-2
+are unavailable at the first two anchors. This is not retraining,
+an optimization run, or a held-out test. Any retrospective
+oracle-defined change subset is descriptive only.
+
+Entry point:
+
+```bash
+python -m pytest tests/test_isj_v8_*.py -q
+python -u -m experiments.isj_v8.causal_prior_dev --preflight
+```
+
+**Caution:** the original server worktree may still be on
+`isj-supplementary-experiments-20261115` with unrelated modified
+and untracked files. Do NOT use `git reset --hard`, `git clean`
+or `git switch --force`. V8.2 files can be safely fetched and
+extracted from the explicit V8 branch Git blobs without changing
+the current branch, provided any existing destination content
+is identical (otherwise stop). Do not overwrite local 0027/0016
+or 0020 results or any server-generated artifacts.
+
+V8.2 success will **not** establish model performance in FGO.
+If the previous-step forecast is not better than past h0
+persistence, do not deploy an unsubstantiated predictive gate.
