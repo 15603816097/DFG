@@ -139,3 +139,88 @@ or 0020 results or any server-generated artifacts.
 V8.2 success will **not** establish model performance in FGO.
 If the previous-step forecast is not better than past h0
 persistence, do not deploy an unsubstantiated predictive gate.
+## V8.2 actual Ubuntu 0027 validation results (2026-11-21)
+
+Server transcript: `147 passed` and `V8_2_PREFLIGHT_EXIT=0`.
+All scores are retrospective, existing frozen seed43 validation predictions,
+only 0027 frames 3182..3859 (678 anchors); no FGO or withheld data.
+
+| Model | h0(t-1) persistence | h1(t-1) | h0(t-2) persistence | h2(t-2) | 0.5 h1(t-1) + 0.5 h2(t-2) |
+|---|---:|---:|---:|---:|---:|
+| GRU96 | 0.225792 | 0.220314 | 0.234972 | 0.227793 | 0.223276 |
+| GRU106 | 0.222063 | 0.222343 | 0.233183 | 0.228289 | 0.224601 |
+| Mamba | 0.225615 | 0.218263 | 0.238568 | 0.227252 | **0.215450** |
+
+The Mamba fixed blend beats its own one-frame past-h0-persistence
+by 0.010165 (4.51% RMSE); direct h1 wins 0.007352 and direct
+h2 wins 0.011316 against the *respective* one/two-frame baselines.
+These synthetic-label RMSE improvements are small and cannot
+be reported as state-estimation gains.
+
+## V8.3 frozen development-only FGO design (pre-registered in code)
+
+One **exploratory** 0027 validation replay is now authorized.
+Every method uses identical development four-sensor factors,
+the same 680-frame interval [3180,3860), the same LiDAR
+initialization, the V7 train-only 5-bin XYZ noise mapping,
+the V7 Cap4 precision bound and the same GTSAM LM stop rules.
+
+Methods:
+
+- Shared `axis_fixed` (no network).
+- For each of the three seed43 frozen models, five alternatives:
+  `h0_current_observation_available` — uses h0(t) after GPS(t) arrives;
+  `h0_tminus1_persistence` — past only;
+  `h1_tminus1_causal_prior` — past only;
+  `h2_tminus2_causal_prior` — past only;
+  `h1h2_equal_causal_prior` — past only, fixed [0.5,0.5] weights.
+- To compare whole-graph results with identical factor counts,
+  every case uses train-fixed XYZ noise on the initial two
+  frames of this 680-frame validation graph; after that
+  the chosen predictions are mapped to per-axis GPS sigma.
+  This startup policy is fixed BEFORE viewing any V8.3 FGO results.
+
+**Primary evaluation**: origin-relative OXTS/GPS-correlated
+3D position RMSE of the same 680 frames. Secondary diagnostics:
+2D RMSE, 1-frame and 10-frame translation displacement error.
+Primary scientific comparison is the difference between
+`h1_tminus1_causal_prior` and `h0_tminus1_persistence`
+for each model; the h2 comparison uses `h0(t-2)`.
+Predeclared additional comparisons: h1h2 50/50 vs h0(t-1)
+and h0_current (diagnostic current-observation reference only).
+All 16 graphs are solved under the same 12-pass LM budget
+and required stabilization before any reference position error is
+computed. Only one seed and one initialization; no significance claim.
+
+**Important distinction**: time-aligned forecast weights do NOT
+make this an online estimator. The actual graph is still OFFLINE
+full-batch optimization using future pose factors. No feedback
+residual weighting, evidence calibration or iSAM2 is added.
+
+V8.3 writes exactly one *new*, non-overwriting development folder:
+`results/isj_v8/dev_0027_feedforward_fgo_v1/`. The old
+`results/isj_v7` and 0016/0020 archives remain untouched.
+
+Preflight (metadata / covariance preparation only; no solver, writes, test):
+
+```bash
+python -m pytest tests/test_isj_v7_*.py tests/test_isj_v8_*.py -q
+python -m experiments.isj_v8.run_dev_feedforward_fgo --preflight
+```
+
+Explicit DEV solver (only AFTER all tests+preflight pass):
+
+```bash
+python -u -m experiments.isj_v8.run_dev_feedforward_fgo \
+  --run-graph --token V8_DEV_ONLY_CAUSAL_FGO_0027
+```
+
+Do not alter the candidate methods, equal-blend weight, noise map
+or optimizer based on existing 0016/0020 scores. This is an
+exploratory test on the previously inspected 0027 development
+interval, NOT new independent confirmatory evidence for ISJ.
+
+**Future V8.4:** introduce feedback using a pre-update innovation
+and validate its conditional independence. Do not add posterior
+same-observation residual reweighting inside the current offline
+graph without a statistically justified robust estimation model.
