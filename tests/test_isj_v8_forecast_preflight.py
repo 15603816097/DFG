@@ -35,7 +35,7 @@ def test_v8_development_transition_subset_is_diagnostic_only():
     anchors, y, pred, u = _fixture(with_changes=True)
     scores = v8.score_development_forecasts(anchors, y, pred, u)
     for h in (1, 2):
-        r = scores[f"h"]["oracle_defined_change_subset"]
+        r = scores[f"h{h}"]["oracle_defined_change_subset"]
         assert 0 < r["count"] < 680
         assert r["forecast"]["rmse"] < r["causal_h0_persistence"]["rmse"]
         assert r["predicted_change_sign_accuracy"] == 1.0
@@ -46,7 +46,7 @@ def test_v8_zero_change_subset_is_explicit_null_not_a_spurious_score():
     anchors, y, pred, u = _fixture(with_changes=False)
     scores = v8.score_development_forecasts(anchors, y, pred, u)
     for h in (1, 2):
-        r = scores[f"h"]["oracle_defined_change_subset"]
+        r = scores[f"h{h}"]["oracle_defined_change_subset"]
         assert r["count"] == 0
         assert r["forecast"] is None
         assert r["causal_h0_persistence"] is None
