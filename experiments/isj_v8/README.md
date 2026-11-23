@@ -277,3 +277,72 @@ validate the future reliability mechanism. A lower OXTS-relative RMSE
 under a *different graph objective* is not itself local-minimum
 evidence. The original V8.3 result remains a mixed/negative result
 for predictive fusion; V8.3.1 is a numerical diagnosis only.
+
+## V8.3.1 actual server result (2026-11-23)
+
+On 0027 DEV, `173 passed`, four solves completed, and
+`V8_3_1_RUN_EXIT=0`. SHA256 of the new probe archive:
+
+`c684238ad7b97c23add7e116129ab4b2d9be8ad79fe7017d2c2e3140dca3a854`
+
+For exactly the same GPS covariance graph:
+
+| Target case | Start | Objective | 3D RMSE [m] |
+|---|---|---:|---:|
+| Mamba h0(t) | LiDAR default | 2044.7042 | 2.0733 |
+| Mamba h0(t) | Mamba 50/50 result | 11090.5444 | 6.6443 |
+| Mamba h1/h2 50/50 | LiDAR default | 10967.3191 | 6.6443 |
+| Mamba h1/h2 50/50 | Mamba h0(t) result | 2236.6191 | 2.1552 |
+
+The first target's cross-start LM solution did NOT decrease objective
+at all: 11090.54442322 both before and after one reported pass, while
+the wrapper marked `stable=True`. The second target can achieve a
+same-graph objective about 79.6% lower from a different start.
+
+**Correct interpretation:** this establishes large
+initialization/solver-outcome dependence for the same fixed objectives.
+It does **not** prove both returned estimates are stationary local
+minima: the current outer loop calls a graph `stable` whenever
+relative objective reduction and pose displacement are small, including
+when there is literally NO progress. Therefore the word "convergence"
+does not yet establish first-order stationarity.
+
+## V8.3.2 stationarity diagnostic (pre-registered before gradient results)
+
+`diagnose_dev_stationarity.py` reads and verifies BOTH frozen JSON
+archives (V8.3 SHA256 and V8.3.1 SHA256), re-creates the same
+two 0027 graphs and re-executes the original four solves solely
+because the prior JSON retained no optimized Pose3 matrices.
+
+For each initial and final pose estimate, query
+`graph.linearize(values).gradientAtZero().norm()` as documented in
+GTSAM. The L2 norm of `J^T r` is a first-order diagnostic in mixed
+Pose3 tangent coordinates; there is no pre-selected universal
+absolute threshold for "stationary". Report absolute norm and
+per-sqrt-4080 tangent-dimension descriptive normalization, within
+the SAME graph. Do not compare objectives between differently
+weighted graphs, and do not call a stationary point a global optimum.
+
+The stage does **not** open the OXTS clean reference, evaluate
+position RMSE, retrain models, adjust solver configurations,
+read held-out sequences 0016/0020 or modify V8.3/V8.3.1 results.
+
+```bash
+python -m pytest tests/test_isj_v7_*.py tests/test_isj_v8_*.py -q
+python -m experiments.isj_v8.diagnose_dev_stationarity --preflight
+# Only once tests+preflight pass:
+python -u -m experiments.isj_v8.diagnose_dev_stationarity \
+  --run-diagnostic --token V8_3_2_0027_STATIONARITY_DIAGNOSTIC
+```
+
+Exactly one new directory is generated, never overwritten:
+`results/isj_v8/dev_0027_stationarity_audit_v1`.
+
+Interpretation: a large tangent gradient at a no-progress "stable"
+LM output directly invalidates the claim that the outer stopping
+flag verifies first-order convergence. A small gradient after two
+initializations would support genuine distinct stationary points,
+but would not by itself show local minimum (second-order test
+would be needed). In either case, the V8.3 FGO results are
+development-only, non-independent, and insufficient for claiming
+universal Mamba prediction-gated robustness.
