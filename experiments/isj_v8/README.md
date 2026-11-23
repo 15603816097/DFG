@@ -402,3 +402,81 @@ initializations, use exactly the same predeclared
 reference-independent initial states for every method and select
 within each fixed graph solely by its own objective (not OXTS-relative
 RMSE). Keep all V7/V8.3 original results immutable.
+
+## V8.3.2 read-only audit completed (2026-11-23)
+
+Server: `190 passed`, `V8_STATIONARITY_AUDIT_EXIT=0`,
+`V8_3_2_STATIONARITY_READONLY_AUDIT_PASSED`.
+Identical target objectives have very different terminal gradients
+under different seeds:
+
+| Graph | LiDAR seed gradient | Cross seed gradient |
+|---|---:|---:|
+| Mamba current-h0 | 4.59158 | **274.44174** |
+| Mamba h1/h2 equal blend | **263.92505** | 2.09610 |
+
+Both bold terminal gradients correspond to the last wrapper pass having
+**0 objective reduction AND 0 translation shift**, despite original
+`stable=True`. Original V8.3 performance is not a certified
+first-order-converged comparison.
+
+## V8.3.3 — controlled solver health replay (EXPLORATORY)
+
+Two new files in this stage:
+
+- `solver_health_v8.py`: V8-only wrapper retaining the same GTSAM
+  LM inner iterations/tolerances, but reporting
+  `STALLED_NO_PROGRESS`, `CONVERGED_CANDIDATE` or
+  `MAX_PASSES_NOT_CONVERGED`. It checks graph error reduction,
+  translation shift, **rotation shift** and the full GTSAM gradient
+  norm. No-gradients and objective increases fail closed.
+  `CONVERGED_CANDIDATE` is still an engineering status, NOT a
+  first-order stationarity or global optimum certificate.
+- `run_dev_solver_health_replay.py`: one non-overwriting exploratory
+  rerun of the exact 16 V8.3 objectives, each from TWO identical,
+  reference-independent initializations, 32 attempted solves total.
+  Initialization A = original LiDAR odometry pose sequence;
+  B = the same LiDAR orientations with translations from corrupted
+  GPS measurements, rebased to the development-interval origin.
+  These two initializations are held FIXED across all 16 methods.
+
+No algorithm candidate is selected by clean/OXTS reference errors.
+For a given case, **only** solver outcomes with
+`CONVERGED_CANDIDATE` are eligible, and the lower objective is
+chosen **within that case**. Cases with no eligible candidate are
+reported as `NO_QUALIFIED_CANDIDATE`, not assigned fabricated
+position RMSE. Cases must NOT be ranked by graph objective values
+across different covariance configurations.
+
+The OXTS/GPS-correlated reference is loaded only after all solves and
+selections, for explicitly labelled retrospective 0027 DEV reporting.
+No 0016/0020 access; no retransmission of model weights; no
+Mamba retraining, covariance remapping, feedback or iSAM2.
+
+This is a **posthoc** numerical diagnosis to investigate whether
+the previous negative/mixed V8.3 localization outcomes were confounded
+by the stop rule. It is NOT independent, is not a confirmatory V8
+benchmark, and does not repair the GPS/OXTS reference dependence.
+
+The new stage retains all 32 solved pose sequences, including
+diagnostically failed/stalled ones, in a compressed NPZ so that
+subsequent gradient/trajectory audits do not require rerunning GTSAM.
+The metadata records source file hashes, seed status, LM passes,
+gradient norms, same-objective candidate selection and exact derived
+artifact hash. Nothing is written outside the new output directory.
+
+**Server commands after syncing new source files:**
+
+```bash
+python -m pytest tests/test_isj_v7_*.py tests/test_isj_v8_*.py -q
+python -u -m experiments.isj_v8.run_dev_solver_health_replay --preflight
+# Only when both tests and preflight pass:
+python -u -m experiments.isj_v8.run_dev_solver_health_replay \
+  --run-replay --token V8_DEV_0027_SOLVER_HEALTH_REPLAY
+```
+
+The results go to `results/isj_v8/dev_0027_solver_health_replay_v1/`,
+and NEVER replace `results/isj_v8/dev_0027_feedforward_fgo_v1`
+or either later gradient/probe archive. If outputs expose unstable
+solver behavior, stop claiming robust FGO performance and consider
+solver/measurement-model redesign before adding predictive feedback.
