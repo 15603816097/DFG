@@ -524,6 +524,8 @@ def run_four_sensor_factor_graph(
     use_lidar=True,
     use_camera=True,
     config=None,
+    gps_sigmas_override=None,
+    build_graph_only=False,
 ):
     """
     Build and optimize a Pose3 factor graph.
@@ -558,6 +560,27 @@ def run_four_sensor_factor_graph(
         raise ValueError(
             "At least 2 frames are required"
         )
+
+    # Optional explicit GPS covariance bridge for V7 development pilots.
+    # Legacy callers retain identical behavior when this is omitted.
+    # The override must be precomputed without labels, posterior FGO
+    # residuals or reference trajectories. Predictive legacy mode is
+    # disallowed to prevent ambiguous double weighting.
+    if gps_sigmas_override is not None:
+        if mode != "fixed" or not use_gps:
+            raise ValueError(
+                "gps_sigmas_override requires fixed mode and use_gps=True"
+            )
+        gps_sigmas_override = np.asarray(
+            gps_sigmas_override, dtype=np.float64
+        )
+        if (gps_sigmas_override.shape not in ((n,), (n, 3))
+                or not np.isfinite(gps_sigmas_override).all()
+                or np.any(gps_sigmas_override <= 0.0)):
+            raise ValueError(
+                "gps_sigmas_override must contain n finite positive sigmas "
+                "with shape (n,) or (n,3) in local XYZ order"
+            )
 
     reliabilities = None
 
@@ -633,8 +656,13 @@ def run_four_sensor_factor_graph(
     ):
         if use_gps:
             if mode == "fixed":
+                # (n,3) XYZ overrides are handled by sigma_xyz below.
+                # Preserve the exact scalar code path for legacy cases.
                 sigma_gps = (
-                    config.gps_fixed_sigma
+                    float(gps_sigmas_override[i])
+                    if (gps_sigmas_override is not None
+                        and gps_sigmas_override.ndim == 1)
+                    else config.gps_fixed_sigma
                 )
             else:
                 sigma_gps = float(
@@ -648,17 +676,19 @@ def run_four_sensor_factor_graph(
                     )
                 )
 
+            # Optional training-only axis-aware GPS covariance.
+            # Legacy scalar sigma behavior is exactly preserved.
+            if (mode == "fixed"
+                    and gps_sigmas_override is not None
+                    and gps_sigmas_override.ndim == 2):
+                sigma_xyz = gps_sigmas_override[i]
+            else:
+                sigma_xyz = (sigma_gps, sigma_gps, sigma_gps)
+
             gps_noise = (
                 gtsam.noiseModel.Diagonal.Sigmas(
                     np.asarray(
-                        [
-                            1e6,
-                            1e6,
-                            1e6,
-                            sigma_gps,
-                            sigma_gps,
-                            sigma_gps,
-                        ],
+                        [1e6, 1e6, 1e6, *sigma_xyz],
                         dtype=np.float64,
                     )
                 )
@@ -974,6 +1004,12 @@ def run_four_sensor_factor_graph(
         "Factor counts:",
         factor_counts,
     )
+
+    # Explicit read-only audit hook: return the EXACT objective graph
+    # constructed by the main solver, before optimization or any writes.
+    # Existing callers still follow the unmodified optimizer path.
+    if build_graph_only:
+        return graph, initial, factor_counts
 
     params = (
         gtsam.LevenbergMarquardtParams()

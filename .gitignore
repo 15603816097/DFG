@@ -22,3 +22,7 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# V7 development-only generated model checkpoints, trajectories and logs
+/results/isj_v7/
+/logs/
