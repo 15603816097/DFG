@@ -346,3 +346,59 @@ but would not by itself show local minimum (second-order test
 would be needed). In either case, the V8.3 FGO results are
 development-only, non-independent, and insufficient for claiming
 universal Mamba prediction-gated robustness.
+
+## V8.3.2 actual Ubuntu gradient results (2026-11-23)
+
+Server confirmed **182 passed**, `V8_3_2_RUN_EXIT=0`.
+Original V8.3/V8.3.1 SHA256 archives passed their input checks;
+only 0027 DEV data were used. No clean/OXTS reference was opened
+during this diagnostic. New result SHA256:
+
+`9f690dff405aeb08fbef5bb7cd68b6afe52e913649ff79832566293cb5cea9da`
+
+Same-target objective/gradient evidence:
+
+| Fixed target graph | Initialization | Final objective | terminal `||J^T r||` | Last LM wrapper pass |
+|---|---|---:|---:|---|
+| Mamba current h0(t) | LiDAR | 2044.7042 | 4.5916 | small reduction, 0.0000176m shift |
+| Mamba current h0(t) | other weighting's solution | 11090.5444 | **274.4417** | **zero reduction, zero shift** |
+| Mamba forecast 50/50 | LiDAR | 10967.3191 | **263.9250** | **zero reduction, zero shift** |
+| Mamba forecast 50/50 | current h0(t) solution | 2236.6191 | 2.0961 | small reduction, 0.0000080m shift |
+
+Descriptive gradient norm per sqrt(4080 Pose3 tangent coordinates):
+0.07188, **4.29655**, **4.13191**, and 0.03282, respectively.
+These are not calibrated optimality thresholds.
+
+**Finding:** the V7/V8 outer LM wrapper wrongly classifies
+no-progress steps as `stable=True` because its convergence check
+only requires relative objective decrease <=1e-6 AND pose shift <=0.01m,
+which includes zero change. The two no-progress high-gradient results
+therefore **cannot** be certified as first-order converged. This
+pinpoints a concrete experimental/solver-status confound; it does not
+by itself establish that all other graph solutions are globally optimal
+or that model covariance is correctly calibrated.
+
+Scientific consequence: the original V8.3 Mamba 6.64m outcome
+for 50/50 prior cannot be interpreted as representative performance
+of a numerically converged optimized graph. Do not "correct" V8.3
+by silently replacing its frozen scores; keep them and publish a
+separate solver-corrected exploratory rerun once independently
+validated. Improvements in V8.1/2 synthetic prediction metrics are
+real DEV diagnostics, but NOT state-estimation proof.
+
+Read-only result audit (no GTSAM, no model, no dataset read, no file writes):
+
+```bash
+python -m pytest tests/test_isj_v7_*.py tests/test_isj_v8_*.py -q
+python -m experiments.isj_v8.audit_dev_stationarity_results --audit
+```
+
+**Next research phase: V8.3.3 solver health redesign.** Build a
+V8-only solver status that distinguishes `STALLED`,
+`CONVERGED_CANDIDATE`, and `NOT_CONVERGED`. Require
+first-order diagnostics and per-target objective consistency,
+not the current zero-step criterion. If testing alternative
+initializations, use exactly the same predeclared
+reference-independent initial states for every method and select
+within each fixed graph solely by its own objective (not OXTS-relative
+RMSE). Keep all V7/V8.3 original results immutable.
