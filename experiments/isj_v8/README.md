@@ -224,3 +224,56 @@ interval, NOT new independent confirmatory evidence for ISJ.
 and validate its conditional independence. Do not add posterior
 same-observation residual reweighting inside the current offline
 graph without a statistically justified robust estimation model.
+## V8.3.1 — numerical local-solution diagnosis (post-hoc DEV)
+
+V8.3 result JSON has been audited with **164 passed** and
+`V8_3_REPORT_READONLY_AUDIT_PASSED`, SHA256:
+
+`4a716af6bbdd1f7edfcb9e3282191a781a06d013d8b574e9956c97a8446979ca`
+
+This new stage is explicitly **post-hoc** (cases selected after inspecting
+V8.3), and can diagnose but **not** independently validate an algorithm.
+
+Representative 0027 DEV objectives with strongly different reference errors:
+
+- `mamba_r__h0_current_observation_available`: 2.073255 m.
+- `mamba_r__h1h2_equal_causal_prior`: 6.644273 m.
+
+The new `diagnose_dev_local_solutions.py` runs exactly **four** GTSAM
+optimizations across these two fixed target objectives: first each from
+the identical LiDAR initialization, then each again warm-started with
+the **other target's** converged pose sequence. For a given target,
+GPS covariance is **unchanged** across both starts; it only tests
+initialization dependence. We may compare graph objectives **within**
+each target; objective values between different covariance targets are
+not comparable as method-quality scores.
+
+Preflight audits the original JSON's SHA256, exact training-only XYZ
+covariance map for both cases, and frozen 0027 measurement hashes. The
+original frozen JSON is never rewritten or used to select solver
+hyperparameters; no 0016/0020 data is accessed.
+
+The diagnostic reproduces original 3D RMSE within 0.05 m or fails
+closed. Clean OXTS-correlated GPS reference is opened only after
+all four solves, and never influences weights, initial values or LM.
+
+```bash
+python -m pytest tests/test_isj_v7_*.py tests/test_isj_v8_*.py -q
+python -m experiments.isj_v8.diagnose_dev_local_solutions --preflight
+# Only after all tests and preflight pass:
+python -u -m experiments.isj_v8.diagnose_dev_local_solutions \
+  --run-probe --token V8_3_1_0027_DIAGNOSE_LOCAL_SOLUTIONS
+```
+
+Output (new folder only):
+`results/isj_v8/dev_0027_local_solution_probe_v1/cross_initialization_diagnostics.json`
+
+**Interpretation:** if the same graph objective converges to
+statistically distinct stationary objective values with different starts,
+initialization sensitivity is directly demonstrated for that objective.
+If both starts converge to similar objectives, this **does not rule
+out** other local minima or covariance sensitivity, and does not
+validate the future reliability mechanism. A lower OXTS-relative RMSE
+under a *different graph objective* is not itself local-minimum
+evidence. The original V8.3 result remains a mixed/negative result
+for predictive fusion; V8.3.1 is a numerical diagnosis only.
