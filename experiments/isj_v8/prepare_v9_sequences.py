@@ -19,7 +19,9 @@ import numpy as np
 
 from experiments.isj_v8.backend_v9 import load_lock, LOCK_SHA
 from experiments.isj_v7.supervision_gate import read_policy, validate_policy
-from experiments.isj_v7.cross_sequence_v7 import DEV_PLAN_DIR
+from experiments.isj_v7.cross_sequence_v7 import (
+    DEV_PLAN_DIR, validate_frozen_time_alignment,
+)
 from experiments.degradation.build_degraded_four_sensor_measurements import (
     corrupt_local_gps, lidar_quality, camera_quality, extract_lidar, ts_seconds,
 )
@@ -178,6 +180,41 @@ def hashes(path):
     return {name:sha256(path/name) for name in FILES}
 
 
+def reconcile_historical_audit(sid, manifest, recomputed):
+    """Preserve old 0016 bytes; only its pre-recovery schema may lack audit."""
+    if "timestamp_alignment_audit" not in manifest:
+        if sid != "0016" or recomputed["startup_exception_applied"]:
+            raise ValueError("unexpected missing historical timestamp audit: "+sid)
+        return "recomputed_from_raw_timestamps_legacy_0016"
+    if manifest["timestamp_alignment_audit"] != recomputed:
+        raise ValueError("historical timestamp audit differs: "+sid)
+    return "archived_audit_verified_against_raw_timestamps"
+
+
+def historical_time_audit(sid,n,path):
+    seq=RAW/"2011_09_30"/f"2011_09_30_drive_{sid}_sync"
+    times={}
+    stamp_hashes={}
+    for sensor,suffix,key in (
+            ("oxts","txt","oxts"),
+            ("velodyne_points","bin","velodyne"),
+            ("image_02","png","left-camera"),
+            ("image_03","png","right-camera")):
+        frame_index(sorted((seq/sensor/"data").glob("*."+suffix)),n)
+        stamp=seq/sensor/"timestamps.txt"
+        times[key]=ts_seconds(load_kitti_timestamps(stamp))
+        stamp_hashes[sensor]=sha256(stamp)
+    ref=times.pop("oxts")
+    audit=validate_frozen_time_alignment(sid,ref,times)
+    # Check that the archived graph clock is still the original OXTS clock.
+    # Only timestamp array opened, no positions or reference deserialization.
+    with np.load(path/FILES[0],allow_pickle=False) as z:
+        saved=np.asarray(z["timestamps_seconds"],float)
+    if saved.shape!=(n,) or not np.allclose(saved,ref,rtol=0.,atol=1e-6):
+        raise ValueError("historical archived clock drift: "+sid)
+    return audit,stamp_hashes
+
+
 def historical():
     if (HIST/"RUN_INCOMPLETE").exists() or not (HIST/"heldout_scores.json").is_file():
         raise ValueError("historical V7 build not complete")
@@ -189,11 +226,16 @@ def historical():
                 or m["frames"]!=n or m["degradation_seed"]!=20260826
                 or m["status"]!="BUILT_NOT_EVALUATED"):
             raise ValueError("historical manifest drift")
+        audit,stamp_hashes=historical_time_audit(sid,n,path)
+        audit_origin=reconcile_historical_audit(sid,m,audit)
         entries[sid]=dict(path=str(path.relative_to(ROOT)),frames=n,
                           source="previously_evaluated_v7_recheck",
-                          timestamp_alignment_audit=m["timestamp_alignment_audit"],
+                          timestamp_alignment_audit=audit,
+                          timestamp_audit_origin=audit_origin,
+                          timestamps_sha256=stamp_hashes,
                           hashes=hashes(path))
-        print("HISTORICAL_ARTIFACTS_OK",sid,flush=True)
+        print("HISTORICAL_ARTIFACTS_OK",sid,audit_origin,
+              "policy=",audit["policy"],flush=True)
     return entries
 
 
