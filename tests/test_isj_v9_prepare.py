@@ -42,3 +42,32 @@ def test_validate_pair_masks_without_reference(tmp_path):
     assert verify_arrays(tmp_path,n,[2,3,4])=={"lidar_valid":4,"camera_valid":7}
     with pytest.raises(ValueError,match="disabled factor"):
         verify_arrays(tmp_path,n,[1,2,3,4])
+
+
+def test_legacy_0016_audit_compatibility():
+    from experiments.isj_v8.prepare_v9_sequences import reconcile_historical_audit
+    from experiments.isj_v7.cross_sequence_v7 import validate_frozen_time_alignment
+    ref=np.arange(279,dtype=float)*.1
+    streams={k:ref.copy() for k in ("velodyne","left-camera","right-camera")}
+    audit=validate_frozen_time_alignment("0016",ref,streams)
+    old={"sequence":"0016"}
+    assert reconcile_historical_audit("0016",old,audit)=="recomputed_from_raw_timestamps_legacy_0016"
+    assert "timestamp_alignment_audit" not in old
+    with pytest.raises(ValueError,match="unexpected missing"):
+        reconcile_historical_audit("0020",{},audit)
+    with pytest.raises(ValueError,match="differs"):
+        reconcile_historical_audit("0016",{"timestamp_alignment_audit":{}},audit)
+
+
+def test_0020_original_exception_preserved():
+    from experiments.isj_v8.prepare_v9_sequences import reconcile_historical_audit
+    from experiments.isj_v7.cross_sequence_v7 import validate_frozen_time_alignment
+    ref=np.arange(1104,dtype=float)*.1
+    stream=ref.copy()
+    stream[:3]-=.12
+    streams={k:stream.copy() for k in ("velodyne","left-camera","right-camera")}
+    audit=validate_frozen_time_alignment("0020",ref,streams)
+    assert audit["startup_exception_applied"]
+    assert reconcile_historical_audit("0020",{"timestamp_alignment_audit":audit},audit)=="archived_audit_verified_against_raw_timestamps"
+    with pytest.raises(ValueError,match="unexpected missing"):
+        reconcile_historical_audit("0016",{},audit)
