@@ -3,7 +3,7 @@ import pytest
 import gtsam
 
 from experiments.isj_v8.backend_v9 import (
-    COLD, HUBER_K, map_h0, build_graphs, solve_uniform,
+    COLD, HUBER_K, map_h0, build_graphs, solve_uniform, directional_audit_v9,
 )
 from experiments.isj_v8.backend_c8_numeric import (
     yaw_aligned_seed, verify_objective, directional_audit,
@@ -86,3 +86,29 @@ def test_uniform_solver_huber():
     assert res["derivative_audit"]["passed"]
     assert res["last_step_stable"]
     assert res["stationarity_certified"] is False
+    for name in ("warm_derivative_audit", "continuation_derivative_audit", "derivative_audit"):
+        audit = res[name]
+        assert audit["passed"]
+        assert {c["step"] for c in audit["checks"] if c["required"]} == {1e-5, 1e-6}
+        assert {c["step"] for c in audit["checks"] if not c["required"]} == {1e-4}
+        assert all(c["passed"] for c in audit["checks"] if c["required"])
+
+
+def test_v9_audit_rejects_wrong_jacobian():
+    # Identical costs but deliberately incorrect Jacobian: the audit
+    # must reject this, not merely accept all sufficiently small steps.
+    def callback(this, values, H):
+        p = values.atPose3(0)
+        if H is not None:
+            H[0] = np.zeros((3, 6), dtype=float, order="F")
+        return p.translation() - np.array([1., 2., 3.])
+    a = gtsam.NonlinearFactorGraph()
+    b = gtsam.NonlinearFactorGraph()
+    noise = gtsam.noiseModel.Isotropic.Sigma(3, 1.)
+    a.add(gtsam.GPSFactor(0, np.array([1., 2., 3.]), noise))
+    b.add(gtsam.CustomFactor(noise, [0], callback))
+    x = gtsam.Values()
+    x.insert(0, gtsam.Pose3())
+    audit = directional_audit_v9(gtsam, a, b, x, 1)
+    assert not audit["passed"]
+    assert any(not c["passed"] for c in audit["checks"] if c["required"])
