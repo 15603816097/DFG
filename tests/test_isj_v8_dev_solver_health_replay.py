@@ -180,37 +180,48 @@ def test_v8_3_3_full_runner_selects_only_candidate_with_no_truth_selection(
     class Sub:
         gps_local = np.zeros((680, 3))
     monkeypatch.setattr(r, "subgraph_measurements", lambda raw, **kw: Sub())
-    class Init:
-        poses = _poses()
     def create_graph(data, outpath, **kw):
         assert kw["build_graph_only"] is True
         assert kw["mode"] == "fixed"
-        return object(), Init(), r.FACTORS.copy()
+        return object(), FakeValues(_poses()), r.FACTORS.copy()
     monkeypatch.setattr(r, "run_four_sensor_factor_graph", create_graph)
-    monkeypatch.setattr(r, "_positions", lambda _g, v, n: v.poses.copy())
-    monkeypatch.setattr(r, "common_initializations",
-                        lambda g, init, gps: {
-                            r.SEED_NAMES[0]: "LIDAR",
-                            r.SEED_NAMES[1]: "GPS",
-                        })
+
+    # Exercise the real common_initializations() path: both seeds must
+    # be Values-like objects supporting the same pose extraction API.
+    def positions(_g, values, n):
+        if values.poses is not None:
+            return values.poses.copy()
+        return np.stack([values.records[i].matrix for i in range(n)])
+
+    monkeypatch.setattr(r, "_positions", positions)
     call = []
     def solve(graph, values, n):
+        assert isinstance(values, FakeValues)
+        assert n == 680
         call.append(values)
-        status = ("CONVERGED_CANDIDATE" if values == "LIDAR"
+        is_lidar = values.poses is not None
+        status = ("CONVERGED_CANDIDATE" if is_lidar
                   else "STALLED_NO_PROGRESS")
         return {
             "status": status, "poses": _poses(),
-            "objective": 10. if values == "LIDAR" else 1.,
+            "objective": 10. if is_lidar else 1.,
             "initial_objective": 100.,
             "initial_gradient_l2": 100.,
-            "final_gradient_l2": 2. if values == "LIDAR" else 200.,
+            "final_gradient_l2": 2. if is_lidar else 200.,
             "passes": [{"status": status}],
         }
     monkeypatch.setattr(r, "solve_v8_health", solve)
-    monkeypatch.setattr(r, "reference_diagnostics",
-                        lambda poses, ref: {"3D_DEV_ONLY": 1.0})
+    def evaluate(poses, ref):
+        # Reference-based evaluation must not run before all solver calls.
+        assert len(call) == 32
+        return {"3D_DEV_ONLY": 1.0}
+
+    monkeypatch.setattr(r, "reference_diagnostics", evaluate)
     report = r.run_replay()
     assert len(call) == 32
+    assert call[0] is not call[1]
+    assert all(value is call[0] for value in call[::2])
+    assert all(value is call[1] for value in call[1::2])
     assert report["candidate_case_count"] == 16
     assert report["cases_without_qualified_candidate"] == []
     assert all(
@@ -223,3 +234,11 @@ def test_v8_3_3_full_runner_selects_only_candidate_with_no_truth_selection(
     assert r.METADATA.is_file()
     with np.load(r.POSE_ARCHIVE, allow_pickle=False) as data:
         assert len(data.files) == 34
+        np.testing.assert_array_equal(data["seed_lidar"], _poses())
+        np.testing.assert_array_equal(
+            data["seed_degraded_gps"][:, :3, 3], Sub.gps_local
+        )
+        np.testing.assert_array_equal(
+            data["seed_degraded_gps"][:, :3, :3],
+            data["seed_lidar"][:, :3, :3],
+        )
