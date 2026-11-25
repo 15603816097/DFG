@@ -6,11 +6,13 @@ chosen before any V9 cross-sequence scores (not a calibrated test).
 """
 from __future__ import annotations
 import json
+import math
 from pathlib import Path
 import numpy as np
 
 from experiments.isj_v8.backend_c8_numeric import (
-    build_c8_graphs, verify_objective, directional_audit, yaw_aligned_seed,
+    build_c8_graphs, verify_objective, yaw_aligned_seed,
+    FD_ATOL, FD_RTOL,
     poses_to_values,
 )
 from experiments.isj_v8.solver_health_v8 import solve_v8_health
@@ -93,21 +95,78 @@ def build_graphs(gtsam, legacy, gps, sigma, *, huber=False):
     return a,b,keepalive,count
 
 
+# Uniform V9 audit, including the original coarse step as a diagnostic.
+# Fixed fine steps; no adaptive choice based on agreement with gradient.
+V9_AUDIT_STEPS = (1e-4, 1e-5, 1e-6)
+V9_REQUIRED_STEPS = (1e-5, 1e-6)
+
+
+def directional_audit_v9(gtsam, native, corrected, values, n):
+    """Same directional/absolute-relative tolerances as C8, finer FD.
+
+    Sum factorwise central cost differences to reduce cancellation of
+    large total costs. Still differentiate the actual native objective,
+    including Huber rho, not an IRLS surrogate. The coarse check remains
+    visible but is not a pass gate; both fixed fine steps must pass.
+    This is an engineering consistency check, not stationarity.
+    """
+    verify_objective(native, corrected, values)
+    vector = corrected.linearize(values).gradientAtZero()
+    grad = np.stack([np.asarray(vector.at(k), float).reshape(6) for k in range(n)])
+    norm = float(np.linalg.norm(grad))
+    if not np.isfinite(norm):
+        raise ValueError("nonfinite gradient")
+    rng = np.random.default_rng(42)
+    directions = []
+    if norm > 1e-12:
+        directions.append(("negative_gradient", -grad/norm))
+    for i in range(2):
+        d = rng.normal(size=grad.shape)
+        directions.append((f"random_{i}", d/np.linalg.norm(d)))
+
+    def perturbed(d, h):
+        v = gtsam.Values()
+        for k in range(n):
+            v.insert(k, values.atPose3(k).retract(h*d[k]))
+        return v
+
+    checks = []
+    for name, d in directions:
+        predicted = float(np.sum(grad*d))
+        for h in V9_AUDIT_STEPS:
+            plus, minus = perturbed(d,h), perturbed(d,-h)
+            actual = math.fsum(
+                float(native.at(j).error(plus))-float(native.at(j).error(minus))
+                for j in range(native.size()))/(2*h)
+            err = abs(actual-predicted)
+            tol = FD_ATOL+FD_RTOL*max(abs(actual),abs(predicted))
+            passed = bool(np.isfinite(actual) and err<=tol)
+            checks.append(dict(direction=name, step=h, predicted=predicted,
+                               actual=actual, absolute_error=err, tolerance=tol,
+                               required=h in V9_REQUIRED_STEPS, passed=passed))
+    return dict(gradient_l2=norm, checks=checks,
+                audit_policy="v9_fixed_fine_steps_factorwise_v1",
+                coarse_checks_passed=all(c["passed"] for c in checks if not c["required"]),
+                passed=all(c["passed"] for c in checks if c["required"]))
+
+
 def solve_uniform(gtsam,native,corrected,seed,n):
     """Unchanged V8.4.4 + V8.4.5 policy; no reference used."""
     verify_objective(native,corrected,seed)
     warm=solve_v8_health(native,seed,n)
     v=warm["values"]
     j0=verify_objective(native,corrected,v)
-    audit0=directional_audit(gtsam,native,corrected,v,n)
+    audit0=directional_audit_v9(gtsam,native,corrected,v,n)
     if not audit0["passed"]:
-        raise RuntimeError("warm derivative check failed")
+        raise RuntimeError("warm derivative check failed: "+json.dumps(audit0))
     middle=solve_v8_health(corrected,v,n)
     v=middle["values"]
     j1=verify_objective(native,corrected,v)
-    audit1=directional_audit(gtsam,native,corrected,v,n)
-    if not audit1["passed"] or j1>j0+1e-8*max(j0,1.):
-        raise RuntimeError("corrected continuation check failed")
+    audit1=directional_audit_v9(gtsam,native,corrected,v,n)
+    if j1>j0+1e-8*max(j0,1.):
+        raise RuntimeError(f"corrected objective increased: {j0} -> {j1}")
+    if not audit1["passed"]:
+        raise RuntimeError("corrected derivative check failed: "+json.dumps(audit1))
     passes=[]
     for i in range(2):
         before=_positions(gtsam,v,n)
@@ -125,14 +184,16 @@ def solve_uniform(gtsam,native,corrected,seed,n):
         passes.append(dict(pass_index=i+1,objective_before=jb,objective_after=ja,
                            relative_gain=(jb-ja)/max(jb,1.),
                            translation_shift_m=dt,rotation_shift_rad=dr))
-    audit=directional_audit(gtsam,native,corrected,v,n)
+    audit=directional_audit_v9(gtsam,native,corrected,v,n)
     last=passes[-1]
     stable=bool(abs(last["relative_gain"])<=1e-6 and
                 last["translation_shift_m"]<=.01 and last["rotation_shift_rad"]<=.01)
     if not audit["passed"]:
-        raise RuntimeError("final derivative check failed")
+        raise RuntimeError("final derivative check failed: "+json.dumps(audit))
     return dict(native_status=warm["status"],corrected_status=middle["status"],
-                refinement=passes,derivative_audit=audit,last_step_stable=stable,
+                refinement=passes,warm_derivative_audit=audit0,
+                continuation_derivative_audit=audit1,
+                derivative_audit=audit,last_step_stable=stable,
                 stationarity_certified=False,poses=_positions(gtsam,v,n))
 
 
